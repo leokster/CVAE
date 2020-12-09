@@ -182,15 +182,15 @@ Project Link: [https://github.com/leokster/CVAE](https://github.com/leokster/CVA
 
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/leokster/repo.svg?style=for-the-badge
+[contributors-shield]: https://img.shields.io/github/contributors/leokster/CVAE.svg?style=for-the-badge
 [contributors-url]: https://github.com/leokster/CVAE/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/leokster/repo.svg?style=for-the-badge
+[forks-shield]: https://img.shields.io/github/forks/leokster/CVAE.svg?style=for-the-badge
 [forks-url]: https://github.com/leokster/CVAE/network/members
-[stars-shield]: https://img.shields.io/github/stars/leokster/repo.svg?style=for-the-badge
+[stars-shield]: https://img.shields.io/github/stars/leokster/CVAE.svg?style=for-the-badge
 [stars-url]: https://github.com/leokster/CVAE/stargazers
-[issues-shield]: https://img.shields.io/github/issues/leokster/repo.svg?style=for-the-badge
+[issues-shield]: https://img.shields.io/github/issues/leokster/CVAE.svg?style=for-the-badge
 [issues-url]: https://github.com/leokster/CVAE/issues
-[license-shield]: https://img.shields.io/github/license/leokster/repo.svg?style=for-the-badge
+[license-shield]: https://img.shields.io/github/license/leokster/CVAE.svg?style=for-the-badge
 [license-url]: https://github.com/leokster/CVAE/blob/master/LICENSE.txt
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 [linkedin-url1]: https://linkedin.com/in/tim-rohner
