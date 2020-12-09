@@ -78,4 +78,4 @@ if __name__ == "__main__":
 
     fig.show()
     fig.show()
-    fig.savefig("mnist.png")
+    #fig.savefig("mnist.png")
