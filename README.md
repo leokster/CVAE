@@ -34,7 +34,7 @@
 <br />
 <p align="center">
   <a href="https://github.com/leokster/CVAE">
-    <img src="images/logo.png" alt="Logo" height="80">
+    <img src="images/logo.png" alt="Logo" height="200">
   </a>
 
   <h3 align="center">Conditional Variational Autoencoder (CVAE)</h3>
@@ -86,8 +86,7 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-[![Product Name Screen Shot][product-screenshot]](https://example.com)
-
+![conditional_variational_autoencoder][vae_architecture]
 Here's a blank template to get started:
 **To avoid retyping too much info. Do a search and replace with your text editor for the following:**
 `leokster`, `CVAE`, `twitter_handle`, `email`, `Variational Autoencoder`, `project_description`
@@ -196,3 +195,4 @@ Project Link: [https://github.com/leokster/CVAE](https://github.com/leokster/CVA
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 [linkedin-url1]: https://linkedin.com/in/tim-rohner
 [linkedin-url2]: https://linkedin.com/in/koen-van-walstijn
+[vae_architecture]: images/vae.png
