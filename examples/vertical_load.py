@@ -1,5 +1,4 @@
 import sys
-sys.path.append("/Users/tim/OneDrive - Swissgrid AG/projects/variational_autoencoder")
 
 import tensorflow as tf
 from variational_autoencoder.models import VAE
@@ -61,55 +60,72 @@ def make_decoder(latent_dim=2,  output_dim=1):
 
 
 
-def autoregressive_prediction(x, horizon, model):
-    for i in range(horizon):
-        x = np.concatenate([x, model.predict(x[:,-24:])], axis=1)
-    return x
-
-
 
 if __name__ == "__main__":
     import pandas as pd
     import numpy as np
     from sklearn.preprocessing import StandardScaler
     import matplotlib.pyplot as plt
+    import seaborn as sns
 
+    #load data
     data = pd.read_csv("data/swissgrid_total_load.csv", index_col=0)
 
+    #initialize the scaler for the load data
     scaler = StandardScaler()
     data["MW"] = scaler.fit_transform(np.array(data["MW"]).reshape(-1,1)).flatten()
 
+    #number of past datapoints which should be considered for prediction
     history_len = 24
-    prediction_len = 10
 
-    data_window = pd.DataFrame({i: data["MW"].shift(-i) for i in range(history_len+prediction_len)}).dropna()
+    #number of future datapoints which should be predicted
+    prediction_len = 24
 
+    #dimension of latent space (Z space)
     latent_dim = 30
+
+    #initialize the three networks
     prior = make_prior(latent_dim)
     encoder = make_encoder(latent_dim, output_dim=prediction_len)
     decoder = make_decoder(latent_dim, output_dim=prediction_len)
 
-    x_train = np.array(data_window.iloc[:,:history_len]).reshape(-1,history_len)
-    y_train = np.array(data_window.iloc[:,history_len:]).reshape(-1,prediction_len)
+    #window size (based on history_len and prediction_en)
+    data_window = pd.DataFrame({i: data["MW"].shift(-i) for i in range(history_len+prediction_len)}).dropna()
 
-    encoder([tf.Variable(x_train), tf.Variable(y_train)])
-    prior(x_train)
+    #split dataframe into x and y
+    x = np.array(data_window.iloc[:,:history_len]).reshape(-1,history_len)
+    y = np.array(data_window.iloc[:,history_len:]).reshape(-1,prediction_len)
 
+    #build VAE model
     model = VAE(encoder, decoder, prior)
     model.compile(optimizer="adam")
 
-    model.fit(x_train, y_train, epochs=100, callbacks=ReduceReconstructionWeight())
+    #fit model
+    model.fit(x, y, epochs=100, callbacks=ReduceReconstructionWeight())
 
+    #choose random datapoint
+    start_point = 3551
 
-    res =  scaler.inverse_transform(
-        autoregressive_prediction(x_train[10,:].reshape(1,-1).repeat(1, axis=0), 50, model))
-    pd.DataFrame(res.transpose()).plot()
+    #evaluet datapoint
+    res = scaler.inverse_transform(
+        model(x[start_point,:].reshape(1,-1).repeat(100, axis=0), verbose=1)[2]
+    )
+
+    #make plot of samples
+    pd.DataFrame(res[0:10,:]).transpose().plot()
     plt.show()
 
-fig, ax = plt.subplots(1,1)
-ax.plot(x_train[9:10,-10:].flatten())
+    #make scatterplot of VAE output + ground truth
+    scatter_data = pd.DataFrame(res.transpose()).unstack().reset_index().rename(columns={"level_1": "time", 0: "value"}).drop(
+        columns=["level_0"])
+    scatter_data["time"] += history_len
+    fig, ax = plt.subplots(1,1)
+    sns.scatterplot(data=scatter_data,
+                    x="time",
+                    y="value", alpha=0.1, color="Gray", ax=ax)
+    true_vals = scaler.inverse_transform(np.concatenate([x[start_point,:],
+                                                         y[start_point:start_point + prediction_len,0].flatten()]))
+    sns.lineplot(x=list(range(0, history_len+prediction_len)), y=true_vals, ax=ax)
+    plt.show()
+    fig.savefig("powergrid.png")
 
-df_hist = pd.DataFrame(model.predict(x_train[0:1,:].repeat(1000,0)).transpose()).stack().reset_index().drop(columns=["level_1"]).rename(columns={"level_0":"offset",0:"val"})
-import seaborn as sns
-sns.displot(df_hist, x="val", hue="offset", kind="kde")
-plt.show()

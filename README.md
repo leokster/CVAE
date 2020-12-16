@@ -40,10 +40,15 @@
   <h3 align="center">Conditional Variational Autoencoder (CVAE)</h3>
 
   <p align="center">
-    project_description
-    <br />
-    <a href="https://github.com/leokster/CVAE"><strong>Explore the docs »</strong></a>
-    <br />
+    The conditional variational autoencoder is an extension of the classical autoencoder
+    introduced by Kingma and Welling in 2014 [1]. The here proposed CVAE can be used in 
+    any existing machine learning pipeline. One has to build the three models (see examples)
+    Decoder, Encoder and Prior tailored to the data, the CVAE will then put them together
+    into one single model. 
+  
+<br />
+    <!--<a href="https://github.com/leokster/CVAE"><strong>Explore the docs »</strong></a>
+    <br />-->
     <br />
     <a href="https://github.com/leokster/CVAE/tree/main/examples">View Demo</a>
     ·
@@ -55,12 +60,12 @@
 
 
 
-<!-- TABLE OF CONTENTS -->
+<!-- TABLE OF CONTENTS 
 <details open="open">
   <summary><h2 style="display: inline-block">Table of Contents</h2></summary>
   <ol>
     <li>
-      <a href="#about-the-project">About The Project</a>
+      <a href="#about-the-project"></a>
       <ul>
         <li><a href="#built-with">Built With</a></li>
       </ul>
@@ -81,22 +86,57 @@
   </ol>
 </details>
 
-
+-->
 
 <!-- ABOUT THE PROJECT -->
-## About The Project
+## Conditional Variational Autoencoder
+
+If this is your first contact with such generative models one might note that the three individual networks
+don't output esimations directly, all of them have three outputs. First the mean of a Gaussian, 
+second the log variance of a Gaussian, and third a sample from the corresponding Gaussian. The
+three Models are then chained as shown in the figure below. 
 
 ![conditional_variational_autoencoder][vae_architecture]
-Here's a blank template to get started:
-**To avoid retyping too much info. Do a search and replace with your text editor for the following:**
-`leokster`, `CVAE`, `twitter_handle`, `email`, `Variational Autoencoder`, `project_description`
+
+The lossfunction we use to train the model is the evidence lower bound (ELBO), which lower bounds the
+posterior log-likelihood of the distribution ![posterior][posterior]. The loss function is then given
+by ![total_loss_function] with ![dkl] and ![likl]
+
+### P-Plot
+It is difficult to evaluate models, which output whole distributions for every input.
+Hence, one observes for every datapoint in the test set one distribuiton. We propose the
+p-value evaluation method which is inspired from the Q-Q plots. For a list of empirical 
+distributions (we call it H0) given by its samples and a list of one sample for each distribution, 
+we compute the probability of obtain a sample at least as unlikely as our drawn sample is. If the
+samples are drawn from H0 one would observe that these p-values are uniform (0,1)-distributed.
+
+Compare the figure below, where the rows are the corresponding H0 distributions and the columns
+determine from what distributions the samples are drawn. The blue lines in the (non histogram) 
+figures shows the empirical cumulative distribution function of the observed p-values. The
+gray area shows the deviance from the optimum (which is a straight line). 
+![p_plot]
+
+### Examples
+
+#### MNIST
+The VAE was trained to generate the MNIST dataset conditioned on the label (one-hot-encoded). 
+In the figure below you can see some samples the VAE is producing.
+![MNIST](images/mnist.png)
 
 
-### Built With
+#### Power grid load data
+This example shows how time series can be generated. As example we choose the public available
+data from the Swiss transmission system operator (TSO) Swissgrid. The individual data samples
+describe total electric load consumed in Switzerland in a resoultion of one hour. The figure below 
+shows a true load profile (blue) and the outputs of the VAE (black dots). The VAE was fed with the 
+last 24 hours of load (left part of the blue line). 
+![MNIST](images/powergrid.png)
 
-* []()
-* []()
-* []()
+
+### Requirements
+
+* Tensorflow
+* Scikit-Learn 
 
 
 
@@ -124,14 +164,6 @@ This is an example of how to list things you need to use the software and how to
    npm install
    ```
 
-
-
-<!-- USAGE EXAMPLES -->
-## Usage
-
-Use this space to show useful examples of how a project can be used. Additional screenshots, code examples and demos work well in this space. You may also link to more resources.
-
-_For more examples, please refer to the [Documentation](https://example.com)_
 
 
 
@@ -172,11 +204,12 @@ Project Link: [https://github.com/leokster/CVAE](https://github.com/leokster/CVA
 <!-- ACKNOWLEDGEMENTS -->
 ## Acknowledgements
 
-* []()
-* []()
-* []()
+* Koen Van Walstijn
+* Tim Rohner
 
 
+## Literature
+[1]   https://arxiv.org/abs/1312.6114
 
 
 
@@ -196,3 +229,8 @@ Project Link: [https://github.com/leokster/CVAE](https://github.com/leokster/CVA
 [linkedin-url1]: https://linkedin.com/in/tim-rohner
 [linkedin-url2]: https://linkedin.com/in/koen-van-walstijn
 [vae_architecture]: images/vae.png
+[p_plot]: images/p_plt.png
+[posterior]: https://chart.apis.google.com/chart?cht=tx&chl=\log%20p(y\mid%20x)
+[total_loss_function]: https://chart.apis.google.com/chart?cht=tx&chl=%5Cmathcal%20L%20%3D0.5%5Cmathcal%20L_%7B%5Ctext%7Blikelihood%7D%7D-0.5%5Cmathcal%20L_%7BDKL%7D
+[likl]: https://chart.apis.google.com/chart?cht=tx&chl=\mathcal%20L_{\text{likelihood}}=\frac{(y-\mu_d)^2}{\sigma_d^2}%2B\log\sigma_d^2
+[dkl]: https://chart.apis.google.com/chart?cht=tx&chl=%5Cmathcal%20L_%7BDKL%7D%20%3D1%2B%5Clog%20%5Csigma%5E2%20-%20%5Clog%20%5Csigma_p%5E2%20-%20%5Cfrac%7B1%7D%7B%5Csigma_p%5E2%7D%5Cleft%5B%5Csigma%5E2%2B(%5Cmu-%5Cmu_p)%5E2]

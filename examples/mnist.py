@@ -77,5 +77,4 @@ if __name__ == "__main__":
             axes[i, j].set_axis_off()
 
     fig.show()
-    fig.show()
-    #fig.savefig("mnist.png")
+    #fig.savefig("figures/mnist.png")
