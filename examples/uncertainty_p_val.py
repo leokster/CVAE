@@ -1,5 +1,8 @@
+'''
+
+'''
+
 import numpy as np
-import scipy
 import seaborn as sns
 import matplotlib.pyplot as plt
 from variational_autoencoder.evaluations import calc_area, get_p_vals, calc_area_separated

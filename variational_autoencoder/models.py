@@ -74,7 +74,7 @@ class VAE(tf.keras.Model):
         self.compiled_metrics.update_state(y, y_pred, sample_weight)
         return {m.name: m.result() for m in self.metrics}
 
-    def call(self, data, training=False, sample_size=1):
+    def call(self, data, training=False, sample_size=1, verbose=0):
         # if in training mode
         if training:
             # unpack data
@@ -132,4 +132,7 @@ class VAE(tf.keras.Model):
             else:
                 y_sampled = reconstruction
 
-            return y_sampled
+            if verbose == 0:
+                return y_sampled
+            if verbose == 1:
+                return reconstruction
