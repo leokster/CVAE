@@ -3,7 +3,7 @@ import sys
 import tensorflow as tf
 from variational_autoencoder.models import VAE
 from variational_autoencoder.layers import Sampling
-from variational_autoencoder.callbacks import ReduceReconstructionWeight
+from variational_autoencoder.callbacks import BetaScaling
 
 def make_prior(latent_dim=2):
     input_x = tf.keras.Input(24)
@@ -101,7 +101,7 @@ if __name__ == "__main__":
     model.compile(optimizer="adam")
 
     #fit model
-    model.fit(x, y, epochs=100, callbacks=ReduceReconstructionWeight())
+    model.fit(x, y, epochs=100, callbacks=BetaScaling())
 
     #choose random datapoint
     start_point = 3551

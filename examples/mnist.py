@@ -4,7 +4,7 @@ import tensorflow as tf
 
 from variational_autoencoder.models import VAE
 from variational_autoencoder.layers import Sampling
-from variational_autoencoder.callbacks import ReduceReconstructionWeight
+from variational_autoencoder.callbacks import BetaScaling
 
 
 
@@ -65,7 +65,7 @@ if __name__ == "__main__":
 
     vae = VAE(encoder=encoder, decoder=decoder, prior=prior, reconstruction_loss=tf.keras.losses.mean_squared_error)
     vae.compile("adam")
-    vae.fit(x=mnist_labels_one_hot, y=mnist_digits, callbacks=[ReduceReconstructionWeight(method="linear")], epochs=1)
+    vae.fit(x=mnist_labels_one_hot, y=mnist_digits, callbacks=[BetaScaling(method="linear")], epochs=1)
 
     nsmpl = 15
     res = vae.predict(tf.one_hot(np.linspace(0,9,10).repeat(nsmpl), 10)).reshape(10,nsmpl,28,28).transpose([1,0,2,3])

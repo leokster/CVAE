@@ -14,7 +14,7 @@ def _get_output_len(layer):
 
 class VAE(tf.keras.Model):
     def __init__(self, encoder, decoder, prior, **kwargs):
-        self.reconstruction_weight = tf.Variable(min(kwargs.pop("reconstruction_weight", 0.5), 1) * 1.0,
+        self.beta = tf.Variable(kwargs.pop("beta", 1) * 1.0,
                                                  trainable=False)
         self.reconstruction_loss = kwargs.pop("reconstruction_loss", "likelihood")
         super(VAE, self).__init__(**kwargs)
@@ -110,8 +110,7 @@ class VAE(tf.keras.Model):
                 reconstruction_loss = self.reconstruction_loss(data_y, reconstruction)
 
             # compute weighted sum of the two losses
-            total_loss = self.reconstruction_weight * reconstruction_loss + \
-                         (1 - self.reconstruction_weight) * kl_loss
+            total_loss = reconstruction_loss + self.beta * kl_loss
 
             # add loss for gradient computation
             self.add_loss(total_loss)
@@ -119,7 +118,7 @@ class VAE(tf.keras.Model):
             # add metrices for training logs
             self.add_metric(reconstruction_loss, aggregation='mean', name='r_loss')
             self.add_metric(kl_loss, aggregation='mean', name='kl_loss')
-            self.add_metric(self.reconstruction_weight, aggregation='mean', name='rec_weight')
+            self.add_metric(self.beta, aggregation='mean', name='rec_weight')
             return 0
 
         # if in inference mode

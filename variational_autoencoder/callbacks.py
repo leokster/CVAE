@@ -1,14 +1,15 @@
 import tensorflow as tf
 import numpy as np
 
-class ReduceReconstructionWeight(tf.keras.callbacks.Callback):
-    def __init__(self, method="linear", **kwargs):
-        super(ReduceReconstructionWeight, self).__init__()
+class BetaScaling(tf.keras.callbacks.Callback):
+    def __init__(self, method="linear", max_beta=1, **kwargs):
+        super(BetaScaling, self).__init__()
 
         if method == "linear":
-            self.method = lambda epoch: 0.99-0.5*epoch/self.params['epochs']
+            self.method = lambda epoch: epoch/self.params['epochs']*max_beta
         elif method == "exponential":
-            self.method = lambda epoch: (np.exp(-3*epoch/self.params['epochs'])+1)/2
+            raise ValueError("exponential is not yet implemented")
+            #self.method = lambda epoch: (np.exp(-3*epoch/self.params['epochs'])+1)/2
         elif callable(method):
             self.method = method
         else:
@@ -17,4 +18,4 @@ class ReduceReconstructionWeight(tf.keras.callbacks.Callback):
                             "a weight for the reconstruction loss weight between 0 and 1")
 
     def on_epoch_begin(self, epoch, logs=None):
-        self.model.reconstruction_weight.assign(tf.Variable(self.method(epoch)*1.0, trainable=False, dtype="float32"))
+        self.model.beta.assign(tf.Variable(self.method(epoch)*1.0, trainable=False, dtype="float32"))
