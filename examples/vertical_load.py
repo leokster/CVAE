@@ -4,6 +4,7 @@ import tensorflow as tf
 from variational_autoencoder.models import VAE
 from variational_autoencoder.layers import Sampling
 from variational_autoencoder.callbacks import BetaScaling
+from variational_autoencoder.losses import FullLikelihood
 
 def make_prior(latent_dim=2):
     input_x = tf.keras.Input(24)
@@ -98,10 +99,10 @@ if __name__ == "__main__":
 
     #build VAE model
     model = VAE(encoder, decoder, prior)
-    model.compile(optimizer="adam")
+    model.compile(optimizer="adam", loss=FullLikelihood())
 
     #fit model
-    model.fit(x, y, epochs=100, callbacks=BetaScaling())
+    model.fit(x, y, epochs=100, callbacks=BetaScaling(method="linear"))
 
     #choose random datapoint
     start_point = 3551
