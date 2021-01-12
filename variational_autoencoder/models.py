@@ -1,7 +1,8 @@
 import tensorflow as tf
 from tensorflow.python.keras.engine import data_adapter
 from tensorflow.python.eager import backprop
-from tensorflow.python.keras.engine.training import _minimize
+if int(tf.__version__.replace(".", "")) < 240:
+    from tensorflow.python.keras.engine.training import _minimize
 
 
 def _get_input_shape(layer):
@@ -14,9 +15,7 @@ def _get_output_len(layer):
 
 class VAE(tf.keras.Model):
     def __init__(self, encoder, decoder, prior, **kwargs):
-        self.beta = tf.Variable(kwargs.pop("beta", 1) * 1.0,
-                                                 trainable=False)
-        self.reconstruction_loss = kwargs.pop("reconstruction_loss", "likelihood")
+        self.beta = tf.Variable(kwargs.pop("beta", 1) * 1.0, trainable=False)
         super(VAE, self).__init__(**kwargs)
         self.encoder = encoder
         self.decoder = decoder
@@ -26,13 +25,9 @@ class VAE(tf.keras.Model):
             raise ValueError("The prior must contain 4 output dimensions. It only",
                              "contains {} output dimensions".format(_get_output_len(self.prior)))
 
-        if self.reconstruction_loss == "likelihood" and _get_output_len(self.decoder) != 3:
-            raise ValueError("If likelihood is choosen as reconstruction loss, the decoder must",
-                             "return three outputs [mean, logvar, sample]. Choose another reconstruction loss",
-                             "or build different decoder")
-
-        if self.reconstruction_loss != "likelihood" and not callable(self.reconstruction_loss):
-            raise TypeError("reconstruction_loss must either be callable loss function or 'likelihood'")
+        if _get_output_len(self.encoder) != 3:
+            raise ValueError("The encoder must contain 4 output dimensions. It only",
+                             "contains {} output dimensions".format(_get_output_len(self.encoder)))
 
     def train_step(self, data):
         """The logic for one training step.
@@ -62,16 +57,15 @@ class VAE(tf.keras.Model):
             y_pred = self((x, y), training=True)
             loss = self.compiled_loss(
                 y, y_pred, sample_weight, regularization_losses=self.losses)
-        # For custom training steps, users can just write:
-        #   trainable_variables = self.trainable_variables
-        #   gradients = tape.gradient(loss, trainable_variables)
-        #   self.optimizer.apply_gradients(zip(gradients, trainable_variables))
-        # The _minimize call does a few extra steps unnecessary in most cases,
-        # such as loss scaling and gradient clipping.
-        _minimize(self.distribute_strategy, tape, self.optimizer, loss,
-                  self.trainable_variables)
+
+        if int(tf.__version__.replace(".","")) < 240:
+            _minimize(self.distribute_strategy, tape, self.optimizer, loss,
+                      self.trainable_variables)
+        else:
+            self.optimizer.minimize(loss, self.trainable_variables, tape=tape)
 
         self.compiled_metrics.update_state(y, y_pred, sample_weight)
+
         return {m.name: m.result() for m in self.metrics}
 
     def call(self, data, training=False, sample_size=1, verbose=0):
@@ -84,8 +78,9 @@ class VAE(tf.keras.Model):
                 else:
                     data_x, data_y = data
             else:
-                data_x = data
-                data_y = None
+                raise ValueError("data must be length 2 tuple or list of type (data_x, data_y)")
+                #data_x = data
+                #data_y = None
 
             # run encoder on data_x and data_y
             z_mean, z_log_var, z = self.encoder([data_x, data_y])
@@ -100,26 +95,13 @@ class VAE(tf.keras.Model):
             # run decoder on data_x and z where z is sampled from encoder
             reconstruction = self.decoder([data_x, z])
 
-            # compute likelihood of the true data_y value under the decoder distribution
-            if self.reconstruction_loss == "likelihood":
-                reconstruction_loss = tf.reduce_mean(
-                    0.5 * tf.square(data_y - reconstruction[0]) * tf.exp(-reconstruction[1]) +
-                    reconstruction[1]
-                )
-            else:
-                reconstruction_loss = self.reconstruction_loss(data_y, reconstruction)
-
-            # compute weighted sum of the two losses
-            total_loss = reconstruction_loss + self.beta * kl_loss
-
             # add loss for gradient computation
-            self.add_loss(total_loss)
+            self.add_loss(self.beta * kl_loss)
 
             # add metrices for training logs
-            self.add_metric(reconstruction_loss, aggregation='mean', name='r_loss')
             self.add_metric(kl_loss, aggregation='mean', name='kl_loss')
-            self.add_metric(self.beta, aggregation='mean', name='rec_weight')
-            return 0
+            self.add_metric(self.beta, aggregation='mean', name='beta')
+            return reconstruction
 
         # if in inference mode
         else:
