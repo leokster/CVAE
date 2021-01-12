@@ -9,6 +9,7 @@ from variational_autoencoder.models import VAE
 from variational_autoencoder.layers import Sampling
 from variational_autoencoder.evaluations import get_p_vals
 from variational_autoencoder.callbacks import BetaScaling
+from variational_autoencoder.losses import FullLikelihood
 
 def make_prior(latent_dim=2, input_dim=1):
     input_x = tf.keras.Input(input_dim)
@@ -92,9 +93,9 @@ if __name__ == "__main__":
         decoder = make_decoder(latent_dim=latent_dim, output_dim=data_y.shape[1], input_dim=data_x.shape[1])
 
         model = VAE(encoder, decoder, prior)
-        model.compile(optimizer="adam")
+        model.compile(optimizer="adam", loss=FullLikelihood())
 
-        model.fit(data_x, data_y, epochs=150, callbacks=BetaScaling())
+        model.fit(data_x, data_y, epochs=150, callbacks=BetaScaling(method="linear"))
 
         today = np.array([0,0,0,0,1,0,0,0.94520548,0])
         test_x = today.reshape(1,-1).repeat(10000, axis=0)

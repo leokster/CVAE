@@ -63,8 +63,8 @@ if __name__ == "__main__":
     encoder = make_encoder(latent_dim)
     decoder = make_decoder(latent_dim)
 
-    vae = VAE(encoder=encoder, decoder=decoder, prior=prior, reconstruction_loss=tf.keras.losses.mean_squared_error)
-    vae.compile("adam")
+    vae = VAE(encoder=encoder, decoder=decoder, prior=prior)
+    vae.compile(optimizer="adam", loss=tf.keras.losses.mean_squared_error)
     vae.fit(x=mnist_labels_one_hot, y=mnist_digits, callbacks=[BetaScaling(method="linear")], epochs=1)
 
     nsmpl = 15
