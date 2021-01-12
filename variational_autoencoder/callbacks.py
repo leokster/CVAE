@@ -2,11 +2,11 @@ import tensorflow as tf
 import numpy as np
 
 class BetaScaling(tf.keras.callbacks.Callback):
-    def __init__(self, method="linear", max_beta=1, **kwargs):
+    def __init__(self, method="linear", min_beta=0.00001, max_beta=1, **kwargs):
         super(BetaScaling, self).__init__()
 
         if method == "linear":
-            self.method = lambda epoch: epoch/self.params['epochs']*max_beta
+            self.method = lambda epoch: epoch*(max_beta-min_beta)/self.params['epochs']+min_beta
         elif method == "exponential":
             raise ValueError("exponential is not yet implemented")
             #self.method = lambda epoch: (np.exp(-3*epoch/self.params['epochs'])+1)/2
