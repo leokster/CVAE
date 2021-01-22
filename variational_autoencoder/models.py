@@ -15,6 +15,58 @@ def _get_output_len(layer):
 
 class VAE(tf.keras.Model):
     def __init__(self, encoder, decoder, prior, **kwargs):
+        """
+        Initialize the Conditional Variational Autoencoder model as subcalss of tf.keras.Model.
+        In the following X is a tensor in the domain space and y is a tensor in the target space
+        (including) batch sizes.
+
+        Input parameters:
+        :param encoder: tf.keras.Model taking a list of two tensors as input [X, y] and outputs
+        a list of 3 tensors [Z_mean, Z_logvar, Z_smpl] in the latent space, where Z_mean is the mean
+        of a Gaussian, Z_logvar the logvariance of the Gaussian and Z_smpl one sample of the corresponding
+        distribution (can be realized with the Sampling layer).
+        :pram prior: tf.keras.Model taking a tensor X as input and outputs a list of 3 tensors as the encoder
+        does
+        :param decoder: tf.keras.Model taking a list of two tensors [X, Z]
+        where Z are samples of the latent space and maps it to the target
+        space y. Note: if the decoder has multiple outpts (mor than one tensor) during perdiction only the last one
+        is returned (if training=False). This allows to build parametric distributions. See example below.
+
+
+        Example:
+
+        def make_prior(latent_dim=2):
+            prior_input = tf.keras.layers.Input(13)
+            # add some layers
+            # x = tf.keras.layers.Dense(64)
+            z_mu = tf.keras.layers.Dense(latent_dim)(x)
+            z_logvar = tf.keras.layers.Dense(latent_dim)(x)
+            z_smpl = Sampling()([z_mu, z_logvar])
+            return tf.keras.models.Model(prior_input, [z_mu, z_logvar, z_smpl])
+
+        def make_encoder(latent_dim=2):
+            x_input = tf.keras.layers.Input(13)
+            y_input = tf.keras.layers.Input(1)
+            x = tf.keras.layers.concatenate([x_input, y_input])
+            # add some layers
+            # x = tf.keras.layers.Dense(64)
+            z_mu = tf.keras.layers.Dense(latent_dim)(x)
+            z_logvar = tf.keras.layers.Dense(latent_dim)(x)
+            z_smpl = Sampling()([z_mu, z_logvar])
+            return tf.keras.models.Model([x_input, y_input], [z_mu, z_logvar, z_smpl])
+
+        def make_decoder(latent_dim=2):
+            x_input = tf.keras.layers.Input(13)
+            z_input = tf.keras.layers.Input(latent_dim)
+            x = tf.keras.layers.concatenate([x_input, z_input])
+            # add some layers
+            # x = tf.keras.layers.Dense(64)
+            y_mu = tf.keras.layers.Dense(1)(x)
+            y_logvar = tf.keras.layers.Dense(1)(x)
+            y_smpl = Sampling()([y_mu, y_logvar])
+            y_params = tf.keras.layers.concatenate([y_mu, y_logvar], axis=0)
+            return tf.keras.models.Model([x_input, z_input], [y_params, y_smpl])
+        """
         self.beta = tf.Variable(kwargs.pop("beta", 1) * 1.0, trainable=False)
         super(VAE, self).__init__(**kwargs)
         self.encoder = encoder
@@ -67,6 +119,39 @@ class VAE(tf.keras.Model):
         self.compiled_metrics.update_state(y, y_pred, sample_weight)
 
         return {m.name: m.result() for m in self.metrics}
+
+    def test_step(self, data):
+        """The logic for one evaluation step.
+        This method can be overridden to support custom evaluation logic.
+        This method is called by `Model.make_test_function`.
+        This function should contain the mathematical logic for one step of
+        evaluation.
+        This typically includes the forward pass, loss calculation, and metrics
+        updates.
+        Configuration details for *how* this logic is run (e.g. `tf.function` and
+        `tf.distribute.Strategy` settings), should be left to
+        `Model.make_test_function`, which can also be overridden.
+        Arguments:
+          data: A nested structure of `Tensor`s.
+        Returns:
+          A `dict` containing values that will be passed to
+          `tf.keras.callbacks.CallbackList.on_train_batch_end`. Typically, the
+          values of the `Model`'s metrics are returned.
+        """
+        data = data_adapter.expand_1d(data)
+        x, y, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
+
+        y_pred_inference = self(x, training=False, verbose=True)
+        #y_pred = self((x,y), training=True)
+
+        # Updates stateful loss metrics.
+        self.compiled_loss(
+            y, y_pred_inference, sample_weight, regularization_losses=self.losses)
+
+        self.compiled_metrics.update_state(y, y_pred_inference, sample_weight)
+        return {m.name: m.result() for m in self.metrics}
+
+
 
     def call(self, data, training=False, sample_size=1, verbose=0):
         # if in training mode
