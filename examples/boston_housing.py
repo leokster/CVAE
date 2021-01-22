@@ -67,7 +67,8 @@ def make_decoder(latent_dim=2):
     y_mu = tf.keras.layers.Dense(1)(x)
     y_logvar = tf.keras.layers.Dense(1)(x)
     y_smpl = Sampling()([y_mu, y_logvar])
-    return tf.keras.models.Model([x_input, z_input], [y_mu, y_logvar, y_smpl])
+    y_params = tf.keras.layers.concatenate([y_mu, y_logvar], axis=1)
+    return tf.keras.models.Model([x_input, z_input], [y_params, y_smpl])
 
 def read_index(path):
     lines = open(path).readlines()
@@ -112,9 +113,10 @@ if __name__ == "__main__":
        decoder = make_decoder(latent_dim)
 
        vae = VAE(encoder=encoder, decoder=decoder, prior=prior, beta=0)
-       vae.compile(loss=FullLikelihood(), optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001))
+       vae.compile(loss={"output_1":FullLikelihood()}, optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
 
-       vae.fit(x_train, y_train, epochs=200, callbacks = [BetaScaling(min_beta=0.0001,max_beta=1)])
+
+       vae.fit(x_train, y_train, epochs=50, callbacks = [BetaScaling(min_beta=0.0001,max_beta=1)], validation_split=0.1)
 
        #standard_pred = ((vae.predict(x_test.repeat(100, axis=0))*y_std)+y_mean).reshape(-1,100)
        standard_pred = (((vae.predict(x_test))*y_std)+y_mean)
