@@ -1,4 +1,15 @@
 import tensorflow as tf
+
+from tensorflow.python.keras import activations
+from tensorflow.python.keras import initializers
+from tensorflow.python.keras import regularizers
+from tensorflow.python.keras import constraints
+from tensorflow.python.keras import backend as K
+from tensorflow.python.framework import tensor_shape
+from tensorflow.python.keras.engine.input_spec import InputSpec
+from tensorflow.python.framework import dtypes
+
+
 class Sampling(tf.keras.layers.Layer):
     """Uses (z_mean, z_log_var) to sample z, the vector encoding a digit."""
 
