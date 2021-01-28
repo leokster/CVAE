@@ -1,11 +1,30 @@
 import sys
-sys.path.append("/Users/tim/OneDrive - Swissgrid AG/projects/variational_autoencoder")
+#sys.path.append("/Users/tim/OneDrive - Swissgrid AG/projects/variational_autoencoder")
 import tensorflow as tf
 
 from variational_autoencoder.models import VAE
 from variational_autoencoder.layers import Sampling
 from variational_autoencoder.callbacks import BetaScaling
 
+
+
+class savefig(tf.keras.callbacks.Callback):
+    def __init__(self, location="figures", **kwargs):
+        super(savefig, self).__init__()
+        self.location = location
+    def on_epoch_begin(self, epoch, logs=None):
+        nsmpl = 15
+        res = vae.predict(tf.one_hot(np.linspace(0, 9, 10).repeat(nsmpl), 10)).reshape(10, nsmpl, 28, 28).transpose(
+            [1, 0, 2, 3])
+        fig, axes = plt.subplots(nrows=nsmpl, ncols=10, figsize=(10, int(nsmpl / 2)))
+
+        for i in range(nsmpl):
+            for j in range(10):
+                axes[i, j].imshow(res[i, j], cmap="Greys")
+                axes[i, j].set_axis_off()
+
+        # fig.show()
+        fig.savefig("{}/mnist_{}.png".format(self.location, epoch))
 
 
 def make_prior(latent_dim=2):
@@ -63,18 +82,10 @@ if __name__ == "__main__":
     encoder = make_encoder(latent_dim)
     decoder = make_decoder(latent_dim)
 
-    vae = VAE(encoder=encoder, decoder=decoder, prior=prior)
+    vae = VAE(encoder=encoder, decoder=decoder, prior=prior, beta=0.03)
     vae.compile(optimizer="adam", loss=tf.keras.losses.mean_squared_error)
-    vae.fit(x=mnist_labels_one_hot, y=mnist_digits, callbacks=[BetaScaling(method="linear")], epochs=1)
+    vae.fit(x=mnist_labels_one_hot, y=mnist_digits, callbacks=[
+        #BetaScaling(method="linear", min_beta=0.0, max_beta=1),
+        savefig("figures")
+    ], epochs=100, validation_split=0.1)
 
-    nsmpl = 15
-    res = vae.predict(tf.one_hot(np.linspace(0,9,10).repeat(nsmpl), 10)).reshape(10,nsmpl,28,28).transpose([1,0,2,3])
-    fig, axes = plt.subplots(nrows=nsmpl, ncols=10, figsize=(10,int(nsmpl/2)))
-
-    for i in range(nsmpl):
-        for j in range(10):
-            axes[i,j].imshow(res[i,j], cmap="Greys")
-            axes[i, j].set_axis_off()
-
-    fig.show()
-    #fig.savefig("figures/mnist.png")
