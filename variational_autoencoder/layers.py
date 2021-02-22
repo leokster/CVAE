@@ -12,13 +12,15 @@ from tensorflow.python.framework import dtypes
 
 class Sampling(tf.keras.layers.Layer):
     """Uses (z_mean, z_log_var) to sample z, the vector encoding a digit."""
+    
+    def __init__(self, dist='normal'):
+        super(Sampling, self).__init__()
+        self.dist = getattr(tf.random, dist)
 
-    def call(self, inputs):
-        z_mean, z_log_var = inputs
-        epsilon = tf.keras.backend.random_normal(shape=tf.shape(z_mean))
-        return z_mean + tf.exp(0.5 * z_log_var) * epsilon
-
-
+    def call(self, params):
+        shape = params[0].shape
+        sample = self.dist(shape, *params)
+        return sample
 
 class Dense2d(tf.keras.layers.Layer):
   """Extension of the regular Dense layer to a 3d (and higher) input
@@ -115,11 +117,11 @@ class Dense2d(tf.keras.layers.Layer):
     second_last_dim = tensor_shape.dimension_value(input_shape[-2])
     last_dim = tensor_shape.dimension_value(input_shape[-1])
     if last_dim is None:
-      raise ValueError('The last dimension of the inputs to `Dense` '
+      raise ValueError('The last dimension of the inputs to `Dense2d` '
                        'should be defined. Found `None`.')
 
     if second_last_dim is None:
-      raise ValueError('The second last dimension of the inputs to `Dense` '
+      raise ValueError('The second last dimension of the inputs to `Dense2d` '
                        'should be defined. Found `None`.')
 
     self.input_spec = InputSpec(min_ndim=3, axes={-1: last_dim})
