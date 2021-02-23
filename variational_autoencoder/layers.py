@@ -15,13 +15,14 @@ class Sampling(tf.keras.layers.Layer):
     
     def __init__(self, dist='normal'):
         super(Sampling, self).__init__()
-        self.dist = getattr(tf.random, dist)
+        self.rn_gen = tf.random.Generator.from_non_deterministic_state()
+        self.dist = getattr(self.rn_gen, dist)
 
     def call(self, params):
-        shape = params[0].shape
-        sample = self.dist(shape, *params)
+        sample = self.dist(tf.shape(params[0]), *params)
         return sample
 
+     
 class Dense2d(tf.keras.layers.Layer):
   """Extension of the regular Dense layer to a 3d (and higher) input
   Tensor. Different from the regular Dense layer, weights will not
