@@ -213,7 +213,7 @@ class VAE(tf.keras.Model):
                 self.add_metric(kl_loss, aggregation='mean', name='kl_loss')
                 
             # Add reconstruction loss and metric if using add_loss API
-            if self.kl_loss:
+            if self.r_loss:
                 r_loss = self.r_loss(data_y, y_params)
                 
                 self.add_loss(r_loss)
