@@ -18,3 +18,21 @@ class GaussianLikelihood(Loss):
         if isinstance(self.normalize, (int, float)):
             loss /= self.normalize
         return loss
+    
+class KullbackLeiblerDivergence(Loss):
+    def __init__(self, normalize=True, **kwargs):
+        super(KullbackLeiblerDivergence, self).__init__(**kwargs)
+        self.normalize = normalize
+    
+    def call(self, y_true, z_params):
+        mu_enc = z_params[...,0]
+        lv_enc = z_params[...,1]
+        mu_pri = z_params[...,2]
+        lv_pri = z_params[...,3]
+        loss = ((tf.square(mu_enc - mu_pri) + tf.exp(lv_enc))/tf.exp(lv_pri)
+                + lv_pri - lv_enc - 1)/2
+        if self.normalize==True:
+            loss /= y_true.shape[-1]
+        if isinstance(self.normalize, (int, float)):
+            loss /= self.normalize
+        return loss
