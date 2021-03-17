@@ -19,9 +19,9 @@ class GaussianLikelihood(Loss):
             loss /= self.normalize
         return loss
     
-class KullbackLeiblerDivergence(Loss):
+class KLDivergence(Loss):
     def __init__(self, normalize=True, **kwargs):
-        super(KullbackLeiblerDivergence, self).__init__(**kwargs)
+        super(KLDivergence, self).__init__(**kwargs)
         self.normalize = normalize
     
     def call(self, y_true, z_params):
