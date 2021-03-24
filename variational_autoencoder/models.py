@@ -156,15 +156,18 @@ class VAE(tf.keras.Model):
         return {m.name: m.result() for m in self.metrics}
 
     def build(self, input_shape):
-        self.output_dim = input_shape[-1][-1]
-        
         # Instantiate networks if passed as subclasses
         if isinstance(self.encoder, type):
             self.encoder = self.encoder(latent_dim=self.latent_dim)
-        if isinstance(self.decoder, type):
-            self.decoder = self.decoder(output_dim=self.output_dim)
         if isinstance(self.prior, type):
             self.prior = self.prior(latent_dim=self.latent_dim)
+        if isinstance(self.decoder, type):
+            assert isinstance(input_shape, [list, tuple]), (
+                '''Cannot infer decoder output shape from x data only.
+                Please call model on (x,y) in training mode to build'''
+                )
+            self.output_dim = input_shape[-1][-1]
+            self.decoder = self.decoder(output_dim=self.output_dim)
             
         # Instantiate losses if passed as subclasses
         if isinstance(self.kl_loss, type):
@@ -195,7 +198,7 @@ class VAE(tf.keras.Model):
             z_params_pri, _ = self.prior(data_x)
             
             # Bundle latent parameters to pass to loss function
-            z_params = tf.concat([z_params_enc, z_params_pri], axis=-1)
+            z_params = tf.concat([z_params_pri, z_params_enc], axis=-1)
             
             # compute Kullback–Leibler divergence between prior and encoder
             #kl_loss = -0.5 * tf.reduce_mean(1 + z_log_var_enc - z_log_var_pri - tf.exp(-z_log_var_pri) * (
@@ -225,7 +228,8 @@ class VAE(tf.keras.Model):
 
         # Inference mode
         else:
-            z_params, z = self.prior(data)
+            z_params_pri, z = self.prior(data)
+            z_params = tf.concat(2*[z_params_pri], axis=-1)
             y_params, y = self.decoder([data, z])
 
             if verbose == False:
