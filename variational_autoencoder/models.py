@@ -162,7 +162,7 @@ class VAE(tf.keras.Model):
         if isinstance(self.prior, type):
             self.prior = self.prior(latent_dim=self.latent_dim)
         if isinstance(self.decoder, type):
-            assert isinstance(input_shape, [list, tuple]), (
+            assert isinstance(input_shape, (list, tuple)), (
                 '''Cannot infer decoder output shape from x data only.
                 Please call model on (x,y) in training mode to build'''
                 )
