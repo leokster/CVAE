@@ -1,11 +1,9 @@
-import sys
-#sys.path.append("/Users/tim/OneDrive - Swissgrid AG/projects/variational_autoencoder")
 import tensorflow as tf
 
 from variational_autoencoder.models import VAE
 from variational_autoencoder.layers import Sampling
+from variational_autoencoder.losses import KLDivergence
 from variational_autoencoder.callbacks import BetaScaling
-
 
 
 class savefig(tf.keras.callbacks.Callback):
@@ -33,8 +31,9 @@ def make_prior(latent_dim=2):
     x = tf.keras.layers.Dense(16, activation="relu")(x)
     z_mean = tf.keras.layers.Dense(latent_dim, name="z_mean")(x)
     z_log_var = tf.keras.layers.Dense(latent_dim, name="z_log_var")(x)
-    z = Sampling()([z_mean, z_log_var])
-    return tf.keras.Model(prior_input, [z_mean, z_log_var, z], name="encoder")
+    z_params = tf.stack([z_mean, z_log_var], axis=-1)
+    z = Sampling()([z_mean, tf.exp(z_log_var)])
+    return tf.keras.Model(prior_input, [z_params, z], name="prior")
 
 def make_encoder(latent_dim=2):
     encoder_inputs = tf.keras.Input(shape=(28, 28, 1))
@@ -48,8 +47,9 @@ def make_encoder(latent_dim=2):
     x = tf.keras.layers.Dense(64, activation="relu")(x)
     z_mean = tf.keras.layers.Dense(latent_dim, name="z_mean")(x)
     z_log_var = tf.keras.layers.Dense(latent_dim, name="z_log_var")(x)
-    z = Sampling()([z_mean, z_log_var])
-    return tf.keras.Model([label_input, encoder_inputs], [z_mean, z_log_var, z], name="encoder")
+    z_params = tf.stack([z_mean, z_log_var], axis=-1)
+    z = Sampling()([z_mean, tf.exp(z_log_var)])
+    return tf.keras.Model([label_input, encoder_inputs], [z_params, z], name="encoder")
 
 def make_decoder(latent_dim=2):
     latent_inputs = tf.keras.Input(shape=(latent_dim,))
@@ -60,7 +60,7 @@ def make_decoder(latent_dim=2):
     x = tf.keras.layers.Conv2DTranspose(64, 3, activation="relu", strides=2, padding="same")(x)
     x = tf.keras.layers.Conv2DTranspose(32, 3, activation="relu", strides=2, padding="same")(x)
     decoder_outputs = tf.keras.layers.Conv2DTranspose(1, 3, activation="sigmoid", padding="same")(x)
-    return tf.keras.Model([label_input, latent_inputs], decoder_outputs, name="decoder")
+    return tf.keras.Model([label_input, latent_inputs], [decoder_outputs, decoder_outputs], name="decoder")
 
 
 
@@ -83,9 +83,13 @@ if __name__ == "__main__":
     decoder = make_decoder(latent_dim)
 
     vae = VAE(encoder=encoder, decoder=decoder, prior=prior, beta=0.03)
-    vae.compile(optimizer="adam", loss=tf.keras.losses.mean_squared_error)
-    vae.fit(x=mnist_labels_one_hot, y=mnist_digits, callbacks=[
-        #BetaScaling(method="linear", min_beta=0.0, max_beta=1),
-        savefig("figures")
-    ], epochs=100, validation_split=0.1)
+    vae.compile(optimizer="adam", 
+                loss={'output_1':tf.keras.losses.mean_squared_error,
+                      'output_2':KLDivergence()},
+                loss_weights={'output_1':1,
+                              'output_2':vae.beta})
+    vae.fit(x=mnist_labels_one_hot, y=mnist_digits, 
+            callbacks=[#BetaScaling(method="linear", min_beta=0.1, max_beta=1),
+                       savefig("figures")], 
+            epochs=100, validation_split=0.1)
 

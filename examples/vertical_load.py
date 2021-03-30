@@ -1,10 +1,8 @@
-import sys
-
 import tensorflow as tf
 from variational_autoencoder.models import VAE
 from variational_autoencoder.layers import Sampling
 from variational_autoencoder.callbacks import BetaScaling
-from variational_autoencoder.losses import FullLikelihood
+from variational_autoencoder.losses import GaussianLikelihood, KLDivergence
 
 def make_prior(latent_dim=2):
     input_x = tf.keras.Input(24)
@@ -18,8 +16,9 @@ def make_prior(latent_dim=2):
     x = tf.keras.layers.Dropout(0.2)(x)
     z_mean = tf.keras.layers.Dense(latent_dim, name="z_mean")(x)
     z_log_var = tf.keras.layers.Dense(latent_dim, name="z_log_var")(x)
-    z = Sampling()([z_mean, z_log_var])
-    return tf.keras.models.Model(input_x, [z_mean, z_log_var, z])
+    z_params = tf.stack([z_mean, z_log_var], axis=-1)
+    z = Sampling()([z_mean, tf.exp(z_log_var)])
+    return tf.keras.models.Model(input_x, [z_params, z])
 
 
 def make_encoder(latent_dim=2, output_dim=1):
@@ -36,8 +35,9 @@ def make_encoder(latent_dim=2, output_dim=1):
     x = tf.keras.layers.Dropout(0.2)(x)
     z_mean = tf.keras.layers.Dense(latent_dim, name="z_mean")(x)
     z_log_var = tf.keras.layers.Dense(latent_dim, name="z_log_var")(x)
-    z = Sampling()([z_mean, z_log_var])
-    return tf.keras.models.Model([input_x, input_y], [z_mean, z_log_var, z])
+    z_params = tf.stack([z_mean, z_log_var], axis=-1)
+    z = Sampling()([z_mean, tf.exp(z_log_var)])
+    return tf.keras.models.Model([input_x, input_y], [z_params, z])
 
 
 def make_decoder(latent_dim=2,  output_dim=1):
@@ -56,8 +56,9 @@ def make_decoder(latent_dim=2,  output_dim=1):
     x = tf.keras.layers.Dropout(0.2)(x)
     y_mean = tf.keras.layers.Dense(output_dim, name="y_mean")(x)
     y_log_var = tf.keras.layers.Dense(output_dim, name="y_log_var")(x)
-    y = Sampling()([y_mean, y_log_var])
-    return tf.keras.models.Model([input_x, input_z], [y_mean, y_log_var, y])
+    y_params = tf.stack([y_mean, y_log_var], axis=-1)
+    y = Sampling()([y_mean, tf.exp(y_log_var)])
+    return tf.keras.models.Model([input_x, input_z], [y_params, y])
 
 
 
@@ -70,7 +71,7 @@ if __name__ == "__main__":
     import seaborn as sns
 
     #load data
-    data = pd.read_csv("data/swissgrid_total_load.csv", index_col=0)
+    data = pd.read_csv('../data/swissgrid_total_load.csv', index_col=0)
 
     #initialize the scaler for the load data
     scaler = StandardScaler()
@@ -99,15 +100,19 @@ if __name__ == "__main__":
 
     #build VAE model
     model = VAE(encoder, decoder, prior)
-    model.compile(optimizer="adam", loss=FullLikelihood())
+    model.compile(optimizer="adam", 
+                  loss={'output_1':GaussianLikelihood(),
+                        'output_2':KLDivergence()},
+                  loss_weights={'output_1':1,
+                                'output_2':model.beta})
 
     #fit model
-    model.fit(x, y, epochs=100, callbacks=BetaScaling(method="linear"))
+    model.fit(x, y, epochs=10, callbacks=BetaScaling(method="linear"))
 
     #choose random datapoint
     start_point = 3551
 
-    #evaluet datapoint
+    #evaluate datapoint
     res = scaler.inverse_transform(
         model(x[start_point,:].reshape(1,-1).repeat(100, axis=0), verbose=1)[2]
     )

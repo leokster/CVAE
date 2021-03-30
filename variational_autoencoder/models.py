@@ -12,11 +12,12 @@ def _get_input_shape(layer):
 def _get_output_len(layer):
     return len(layer.output)
 
-
+    
 class VAE(tf.keras.Model):
-    def __init__(self, encoder, decoder, prior, **kwargs):
+    def __init__(self, encoder, decoder, prior, 
+                 kl_loss=None, r_loss=None, latent_dim=None, **kwargs):
         """
-        Initialize the Conditional Variational Autoencoder model as subcalss of tf.keras.Model.
+        Initialize the Conditional Variational Autoencoder model as subclass of tf.keras.Model.
         In the following X is a tensor in the domain space and y is a tensor in the target space
         (including) batch sizes.
 
@@ -29,7 +30,7 @@ class VAE(tf.keras.Model):
         does
         :param decoder: tf.keras.Model taking a list of two tensors [X, Z]
         where Z are samples of the latent space and maps it to the target
-        space y. Note: if the decoder has multiple outpts (mor than one tensor) during perdiction only the last one
+        space y. Note: if the decoder has multiple outputs (more than one tensor) during perdiction only the last one
         is returned (if training=False). This allows to build parametric distributions. See example below.
 
 
@@ -72,14 +73,17 @@ class VAE(tf.keras.Model):
         self.encoder = encoder
         self.decoder = decoder
         self.prior = prior
+        self.kl_loss = kl_loss
+        self.r_loss = r_loss
+        self.latent_dim = latent_dim
 
-        if _get_output_len(self.prior) != 3:
-            raise ValueError("The prior must contain 4 output dimensions. It only",
-                             "contains {} output dimensions".format(_get_output_len(self.prior)))
+        #if _get_output_len(self.prior) != 3:
+        #    raise ValueError("The prior must contain 3 output dimensions. It only",
+        #                     "contains {} output dimensions".format(_get_output_len(self.prior)))
 
-        if _get_output_len(self.encoder) != 3:
-            raise ValueError("The encoder must contain 4 output dimensions. It only",
-                             "contains {} output dimensions".format(_get_output_len(self.encoder)))
+        #if _get_output_len(self.encoder) != 3:
+        #    raise ValueError("The encoder must contain 3 output dimensions. It only",
+        #                     "contains {} output dimensions".format(_get_output_len(self.encoder)))
 
     def train_step(self, data):
         """The logic for one training step.
@@ -145,60 +149,90 @@ class VAE(tf.keras.Model):
         #y_pred = self((x,y), training=True)
 
         # Updates stateful loss metrics.
-        self.compiled_loss(
-            y, y_pred_inference, sample_weight, regularization_losses=self.losses)
+        self.compiled_loss(y, y_pred_inference, sample_weight, 
+                           regularization_losses=self.losses)
 
         self.compiled_metrics.update_state(y, y_pred_inference, sample_weight)
         return {m.name: m.result() for m in self.metrics}
 
+    def build(self, input_shape):
+        # Instantiate networks if passed as subclasses
+        if isinstance(self.encoder, type):
+            self.encoder = self.encoder(latent_dim=self.latent_dim)
+        if isinstance(self.prior, type):
+            self.prior = self.prior(latent_dim=self.latent_dim)
+        if isinstance(self.decoder, type):
+            assert isinstance(input_shape, (list, tuple)), (
+                '''Cannot infer decoder output shape from x data only.
+                Please call model on (x,y) in training mode to build'''
+                )
+            self.output_dim = input_shape[-1][-1]
+            self.decoder = self.decoder(output_dim=self.output_dim)
+            
+        # Instantiate losses if passed as subclasses
+        if isinstance(self.kl_loss, type):
+            self.kl_loss = self.kl_loss(normalize=self.output_dim)
+        if isinstance(self.r_loss, type):
+            self.r_loss = self.r_loss(normalize=self.output_dim)
 
-
-    def call(self, data, training=False, sample_size=1, verbose=0):
-        # if in training mode
+    def call(self, data, training=False, sample_size=1, verbose=False):
+        # Training mode
         if training:
-            # unpack data
+            # Unpack data
             if isinstance(data, list) or isinstance(data, tuple):
                 if len(data) != 2:
-                    raise ValueError("data must be length 2 tuple or list of type (data_x, data_y)")
+                    raise ValueError('''Data must be length 2 tuple or list of 
+                                     type (data_x, data_y)''')
                 else:
                     data_x, data_y = data
             else:
-                raise ValueError("data must be length 2 tuple or list of type (data_x, data_y)")
+                raise ValueError('''Data must be length 2 tuple or list of 
+                                 type (data_x, data_y)''')
                 #data_x = data
                 #data_y = None
 
-            # run encoder on data_x and data_y
-            z_mean, z_log_var, z = self.encoder([data_x, data_y])
-
-            # run prior on data_x
-            z_prior_mean, z_prior_log_var, zz = self.prior(data_x)
-
+            # Run encoder on data_x and data_y
+            z_params_enc, z = self.encoder([data_x, data_y])
+            
+            # Run prior on data_x
+            z_params_pri, _ = self.prior(data_x)
+            
+            # Bundle latent parameters to pass to loss function
+            z_params = tf.concat([z_params_pri, z_params_enc], axis=-1)
+            
             # compute Kullback–Leibler divergence between prior and encoder
-            kl_loss = -0.5 * tf.reduce_mean(1 + z_log_var - z_prior_log_var - tf.exp(-z_prior_log_var) * (
-                    tf.exp(z_log_var) + tf.square(z_mean - z_prior_mean)))
-
+            #kl_loss = -0.5 * tf.reduce_mean(1 + z_log_var_enc - z_log_var_pri - tf.exp(-z_log_var_pri) * (
+            #        tf.exp(z_log_var_enc) + tf.square(z_mean_enc - z_mean_pri)))
+            #self.add_loss(self.beta*kl_loss)
+            
             # run decoder on data_x and z where z is sampled from encoder
-            reconstruction = self.decoder([data_x, z])
-
-            # add loss for gradient computation
-            self.add_loss(self.beta * kl_loss)
-
-            # add metrices for training logs
-            self.add_metric(kl_loss, aggregation='mean', name='kl_loss')
+            y_params, y = self.decoder([data_x, z])
+            
+            # Add Kullback-Leibler loss and metric if using add_loss API
+            if self.kl_loss:
+                kl_loss = self.kl_loss(data_y, z_params)
+                
+                self.add_loss(self.beta * kl_loss)
+                self.add_metric(kl_loss, aggregation='mean', name='kl_loss')
+                
+            # Add reconstruction loss and metric if using add_loss API
+            if self.r_loss:
+                r_loss = self.r_loss(data_y, y_params)
+                
+                self.add_loss(r_loss)
+                self.add_metric(r_loss, aggregation='mean', name='r_loss')
+            
+            # Add beta metric
             self.add_metric(self.beta, aggregation='mean', name='beta')
-            return reconstruction
+            return [y_params, z_params, y, z]
 
-        # if in inference mode
+        # Inference mode
         else:
-            _, _, z = self.prior(data)
-            reconstruction = self.decoder([data, z])
+            z_params_pri, z = self.prior(data)
+            z_params = tf.concat(2*[z_params_pri], axis=-1)
+            y_params, y = self.decoder([data, z])
 
-            if isinstance(reconstruction, list):
-                y_sampled = reconstruction[-1]
-            else:
-                y_sampled = reconstruction
-
-            if verbose == 0:
-                return y_sampled
-            if verbose == 1:
-                return reconstruction
+            if verbose == False:
+                return y
+            if verbose == True:
+                return [y_params, z_params, y, z]

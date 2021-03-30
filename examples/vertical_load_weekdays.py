@@ -1,15 +1,11 @@
-import sys
-
 #from total_energy_consumption_analysis.total_energy_2019 import scaler
-
-sys.path.append("/Users/tim/OneDrive - Swissgrid AG/projects/variational_autoencoder")
 
 import tensorflow as tf
 from variational_autoencoder.models import VAE
 from variational_autoencoder.layers import Sampling
 from variational_autoencoder.evaluations import get_p_vals
 from variational_autoencoder.callbacks import BetaScaling
-from variational_autoencoder.losses import FullLikelihood
+from variational_autoencoder.losses import GaussianLikelihood, KLDivergence
 
 def make_prior(latent_dim=2, input_dim=1):
     input_x = tf.keras.Input(input_dim)
@@ -20,8 +16,9 @@ def make_prior(latent_dim=2, input_dim=1):
     x = tf.keras.layers.Dense(128, activation="relu")(x)
     z_mean = tf.keras.layers.Dense(latent_dim, name="z_mean")(x)
     z_log_var = tf.keras.layers.Dense(latent_dim, name="z_log_var")(x)
-    z = Sampling()([z_mean, z_log_var])
-    return tf.keras.models.Model(input_x, [z_mean, z_log_var, z])
+    z_params = tf.stack([z_mean, z_log_var], axis=-1)
+    z = Sampling()([z_mean, tf.exp(z_log_var)])
+    return tf.keras.models.Model(input_x, [z_params, z])
 
 
 def make_encoder(latent_dim=2, output_dim=1, input_dim=1):
@@ -35,8 +32,9 @@ def make_encoder(latent_dim=2, output_dim=1, input_dim=1):
     x = tf.keras.layers.Dense(128, activation="relu")(x)
     z_mean = tf.keras.layers.Dense(latent_dim, name="z_mean")(x)
     z_log_var = tf.keras.layers.Dense(latent_dim, name="z_log_var")(x)
-    z = Sampling()([z_mean, z_log_var])
-    return tf.keras.models.Model([input_x, input_y], [z_mean, z_log_var, z])
+    z_params = tf.stack([z_mean, z_log_var], axis=-1)
+    z = Sampling()([z_mean, tf.exp(z_log_var)])
+    return tf.keras.models.Model([input_x, input_y], [z_params, z])
 
 
 def make_decoder(latent_dim=2,  output_dim=1, input_dim=1):
@@ -50,8 +48,9 @@ def make_decoder(latent_dim=2,  output_dim=1, input_dim=1):
     x = tf.keras.layers.Dense(128, activation="relu")(x)
     y_mean = tf.keras.layers.Dense(output_dim, name="y_mean")(x)
     y_log_var = tf.keras.layers.Dense(output_dim, name="y_log_var")(x)
-    y = Sampling()([y_mean, y_log_var])
-    return tf.keras.models.Model([input_x, input_z], [y_mean, y_log_var, y])
+    y_params = tf.stack([y_mean, y_log_var], axis=-1)
+    y = Sampling()([y_mean, tf.exp(y_log_var)])
+    return tf.keras.models.Model([input_x, input_z], [y_params, y])
 
 
 
@@ -70,7 +69,7 @@ if __name__ == "__main__":
     import seaborn as sns
     import holidays
 
-    data = pd.read_csv("data/swissgrid_total_load.csv", index_col=0)
+    data = pd.read_csv("../data/swissgrid_total_load.csv", index_col=0)
     ch_holidays = holidays.CountryHoliday("CH")
 
     scaler = StandardScaler()
@@ -86,22 +85,26 @@ if __name__ == "__main__":
     data_x = np.concatenate([weekday, season, holiday_indicator], axis=1)
 
 
-    for i in range(11):
-        latent_dim = i*3
+    for i in range(10):
+        latent_dim = (i+1)*3
         prior = make_prior(latent_dim=latent_dim, input_dim=data_x.shape[1])
         encoder = make_encoder(latent_dim=latent_dim, output_dim=data_y.shape[1], input_dim=data_x.shape[1])
         decoder = make_decoder(latent_dim=latent_dim, output_dim=data_y.shape[1], input_dim=data_x.shape[1])
 
         model = VAE(encoder, decoder, prior)
-        model.compile(optimizer="adam", loss=FullLikelihood())
+        model.compile(optimizer="adam",
+                      loss={'output_1':GaussianLikelihood(),
+                            'output_2':KLDivergence()},
+                      loss_weights={'output_1':1,
+                                    'output_2':model.beta})
 
-        model.fit(data_x, data_y, epochs=150, callbacks=BetaScaling(method="linear"))
+        model.fit(data_x, data_y, epochs=50, callbacks=BetaScaling(method="linear"))
 
         today = np.array([0,0,0,0,1,0,0,0.94520548,0])
         test_x = today.reshape(1,-1).repeat(10000, axis=0)
-        model_output = model(test_x, verbose=1)
+        model_output = model(test_x, verbose=True)
         res = scaler.inverse_transform(
-            model_output[0]
+            model_output[0][...,0]
         )
         res2 = scaler.inverse_transform(
             model_output[2]
@@ -154,12 +157,12 @@ if __name__ == "__main__":
 
 
 
-fig, ax = plt.subplots(1,1)
-ax.plot(x_train[9:10,-10:].flatten())
+    fig, ax = plt.subplots(1,1)
+    ax.plot(data_x[9:10,-10:].flatten())
 
-df_hist = pd.DataFrame(model.predict(x_train[0:1,:].repeat(1000,0)).transpose()).stack().reset_index().drop(columns=["level_1"]).rename(columns={"level_0":"offset",0:"val"})
-import seaborn as sns
-sns.displot(df_hist, x="val", hue="offset", kind="kde")
-plt.show()
+    df_hist = pd.DataFrame(model.predict(data_x[0:1,:].repeat(1000,0)).transpose()).stack().reset_index().drop(columns=["level_1"]).rename(columns={"level_0":"offset",0:"val"})
+    import seaborn as sns
+    sns.displot(df_hist, x="val", hue="offset", kind="kde")
+    plt.show()
 
 
