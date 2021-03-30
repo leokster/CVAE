@@ -15,7 +15,7 @@ class GaussianLikelihood(Loss):
         loss = tf.reduce_mean(tf.reduce_sum(loss, axis=-1))
         if self.normalize==True:
             loss /= mean.shape[-1]
-        if isinstance(self.normalize, (int, float)):
+        if type(self.normalize) == int or type(self.normalize) == float:
             loss /= self.normalize
         return loss
     
@@ -34,6 +34,6 @@ class KLDivergence(Loss):
         loss = tf.reduce_mean(tf.reduce_sum(loss, axis=-1))
         if self.normalize==True:
             loss /= y_true.shape[-1]
-        if isinstance(self.normalize, (int, float)):
+        if type(self.normalize) == int or type(self.normalize) == float:
             loss /= self.normalize
         return loss
