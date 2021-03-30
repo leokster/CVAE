@@ -31,6 +31,7 @@ class KLDivergence(Loss):
         lv_enc = z_params[...,3]
         loss = ((tf.square(mu_enc - mu_pri) + tf.exp(lv_enc))/tf.exp(lv_pri)
                 + lv_pri - lv_enc - 1)/2
+        loss = tf.reduce_mean(tf.reduce_sum(loss, axis=-1))
         if self.normalize==True:
             loss /= y_true.shape[-1]
         if isinstance(self.normalize, (int, float)):
