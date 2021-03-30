@@ -146,7 +146,7 @@ class VAE(tf.keras.Model):
         x, y, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
 
         y_pred_inference = self(x, training=False, verbose=True)
-        #y_pred = self((x,y), training=True)
+        y_pred = self((x,y), training=True)
 
         # Updates stateful loss metrics.
         self.compiled_loss(y, y_pred_inference, sample_weight, 
