@@ -176,10 +176,11 @@ class VAE(tf.keras.Model):
             self.r_loss = self.r_loss(normalize=self.output_dim)
 
     def call(self, data, training=False, sample_size=1, verbose=False):
+        
         # Training mode
         if training:
             # Unpack data
-            if isinstance(data, list) or isinstance(data, tuple):
+            if isinstance(data, (list, tuple)):
                 if len(data) != 2:
                     raise ValueError('''Data must be length 2 tuple or list of 
                                      type (data_x, data_y)''')
@@ -198,7 +199,7 @@ class VAE(tf.keras.Model):
             z_params_pri, _ = self.prior(data_x)
             
             # Bundle latent parameters to pass to loss function
-            z_params = tf.concat([z_params_pri, z_params_enc], axis=-1)
+            z_params = [z_params_pri, z_params_enc]
             
             # compute Kullback–Leibler divergence between prior and encoder
             #kl_loss = -0.5 * tf.reduce_mean(1 + z_log_var_enc - z_log_var_pri - tf.exp(-z_log_var_pri) * (
