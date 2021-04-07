@@ -175,7 +175,7 @@ class VAE(tf.keras.Model):
         if isinstance(self.r_loss, type):
             self.r_loss = self.r_loss(normalize=self.output_dim)
 
-    def call(self, data, training=False, sample_size=1, verbose=False):
+    def call(self, data, training=False, samples=1, verbose=False):
         
         # Training mode
         if training:
@@ -193,10 +193,11 @@ class VAE(tf.keras.Model):
                 #data_y = None
 
             # Run encoder on data_x and data_y
-            z_params_enc, z = self.encoder([data_x, data_y])
+            
+            z_params_enc, z = self.encoder([data_x, data_y, samples])
             
             # Run prior on data_x
-            z_params_pri, _ = self.prior(data_x)
+            z_params_pri, _ = self.prior([data_x, samples])
             
             # Bundle latent parameters to pass to loss function
             z_params = [z_params_pri, z_params_enc]
@@ -207,7 +208,7 @@ class VAE(tf.keras.Model):
             #self.add_loss(self.beta*kl_loss)
             
             # run decoder on data_x and z where z is sampled from encoder
-            y_params, y = self.decoder([data_x, z])
+            y_params, y = self.decoder([data_x, z, samples])
             
             # Add Kullback-Leibler loss and metric if using add_loss API
             if self.kl_loss:
@@ -229,9 +230,9 @@ class VAE(tf.keras.Model):
 
         # Inference mode
         else:
-            z_params_pri, z = self.prior(data)
+            z_params_pri, z = self.prior([data, samples])
             z_params = tf.concat(2*[z_params_pri], axis=-1)
-            y_params, y = self.decoder([data, z])
+            y_params, y = self.decoder([data, z, samples])
 
             if verbose == False:
                 return y
