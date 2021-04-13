@@ -15,7 +15,8 @@ def _get_output_len(layer):
     
 class VAE(tf.keras.Model):
     def __init__(self, encoder, decoder, prior, 
-                 kl_loss=None, r_loss=None, latent_dim=None, **kwargs):
+                 kl_loss=None, r_loss=None, latent_dim=None, 
+                 inference_samples=1000, **kwargs):
         """
         Initialize the Conditional Variational Autoencoder model as subclass of tf.keras.Model.
         In the following X is a tensor in the domain space and y is a tensor in the target space
@@ -76,6 +77,7 @@ class VAE(tf.keras.Model):
         self.kl_loss = kl_loss
         self.r_loss = r_loss
         self.latent_dim = latent_dim
+        self.inference_samples = inference_samples
 
         #if _get_output_len(self.prior) != 3:
         #    raise ValueError("The prior must contain 3 output dimensions. It only",
@@ -154,6 +156,26 @@ class VAE(tf.keras.Model):
 
         self.compiled_metrics.update_state(y, y_pred_inference, sample_weight)
         return {m.name: m.result() for m in self.metrics}
+    
+    def predict_step(self, data):
+        """The logic for one inference step.
+        This method can be overridden to support custom inference logic.
+        his method is called by `Model.make_predict_function`.
+        his method should contain the mathematical logic for one step of inference.
+        This typically includes the forward pass.
+        Configuration details for *how* this logic is run (e.g. `tf.function` and
+        `tf.distribute.Strategy` settings), should be left to
+        `Model.make_predict_function`, which can also be overridden.
+        Args:
+            data: A nested structure of `Tensor`s.
+        Returns:
+            The result of one inference step, typically the output of calling the
+            `Model` on data.
+    """
+        data = data_adapter.expand_1d(data)
+        x, _, _ = data_adapter.unpack_x_y_sample_weight(data)
+        
+        return self(x, training=False, samples=self.inference_samples)
 
     def build(self, input_shape):
         # Instantiate networks if passed as subclasses
