@@ -16,7 +16,11 @@ def _get_output_len(layer):
 class VAE(tf.keras.Model):
     def __init__(self, encoder, decoder, prior, 
                  kl_loss=None, r_loss=None, latent_dim=None, 
-                 inference_samples=1000, **kwargs):
+                 training_mode_samples=1, 
+                 inference_samples_train=10,
+                 inference_samples_test=10, 
+                 inference_samples_predict=1000,
+                 **kwargs):
         """
         Initialize the Conditional Variational Autoencoder model as subclass of tf.keras.Model.
         In the following X is a tensor in the domain space and y is a tensor in the target space
@@ -77,7 +81,10 @@ class VAE(tf.keras.Model):
         self.kl_loss = kl_loss
         self.r_loss = r_loss
         self.latent_dim = latent_dim
-        self.inference_samples = inference_samples
+        self.training_mode_samples = training_mode_samples
+        self.inference_samples_train = inference_samples_train
+        self.inference_samples_test = inference_samples_test
+        self.inference_samples_predict = inference_samples_predict
 
         #if _get_output_len(self.prior) != 3:
         #    raise ValueError("The prior must contain 3 output dimensions. It only",
@@ -112,7 +119,8 @@ class VAE(tf.keras.Model):
         x, y, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
 
         with backprop.GradientTape() as tape:
-            y_pred = self((x, y), training=True)
+            y_pred = self((x, y), training=True, 
+                          samples=self.training_mode_samples)
             loss = self.compiled_loss(
                 y, y_pred, sample_weight, regularization_losses=self.losses)
 
@@ -121,8 +129,14 @@ class VAE(tf.keras.Model):
                       self.trainable_variables)
         else:
             self.optimizer.minimize(loss, self.trainable_variables, tape=tape)
-
-        self.compiled_metrics.update_state(y, y_pred, sample_weight)
+        
+        # Run in inference mode for other metrics
+        if self.compiled_metrics._metrics is not None:
+            y_pred_inference = self(x, training=False, 
+                                    samples=self.inference_samples_train,
+                                    verbose=True)
+            self.compiled_metrics.update_state(y, y_pred_inference, 
+                                               sample_weight)
 
         return {m.name: m.result() for m in self.metrics}
 
@@ -147,14 +161,21 @@ class VAE(tf.keras.Model):
         data = data_adapter.expand_1d(data)
         x, y, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
 
-        y_pred_inference = self(x, training=False, verbose=True)
-        #y_pred = self((x,y), training=True)
-
+        # Run in training mode to calculate loss
+        y_pred = self((x,y), training=True)
+        
         # Updates stateful loss metrics.
-        self.compiled_loss(y, y_pred_inference, sample_weight, 
+        self.compiled_loss(y, y_pred, sample_weight, 
                            regularization_losses=self.losses)
-
-        self.compiled_metrics.update_state(y, y_pred_inference, sample_weight)
+        
+        # Run in inference mode for other metrics
+        if self.compiled_metrics._metrics is not None:
+            y_pred_inference = self(x, training=False, 
+                                    samples=self.inference_samples_test, 
+                                    verbose=True)
+            self.compiled_metrics.update_state(y, y_pred_inference, 
+                                               sample_weight)
+        
         return {m.name: m.result() for m in self.metrics}
     
     def predict_step(self, data):
@@ -175,7 +196,7 @@ class VAE(tf.keras.Model):
         data = data_adapter.expand_1d(data)
         x, _, _ = data_adapter.unpack_x_y_sample_weight(data)
         
-        return self(x, training=False, samples=self.inference_samples)
+        return self(x, training=False, samples=self.inference_samples_predict)
 
     def build(self, input_shape):
         # Instantiate networks if passed as subclasses
@@ -201,6 +222,7 @@ class VAE(tf.keras.Model):
         
         # Training mode
         if training:
+            
             # Unpack data
             if isinstance(data, (list, tuple)):
                 if len(data) != 2:
@@ -211,23 +233,15 @@ class VAE(tf.keras.Model):
             else:
                 raise ValueError('''Data must be length 2 tuple or list of 
                                  type (data_x, data_y)''')
-                #data_x = data
-                #data_y = None
 
-            # Run encoder on data_x and data_y
-            
+            # Run encoder on x and y
             z_params_enc, z = self.encoder([data_x, data_y, samples])
             
-            # Run prior on data_x
+            # Run prior on x
             z_params_pri, _ = self.prior([data_x, samples])
             
             # Bundle latent parameters to pass to loss function
-            z_params = [z_params_pri, z_params_enc]
-            
-            # compute Kullback–Leibler divergence between prior and encoder
-            #kl_loss = -0.5 * tf.reduce_mean(1 + z_log_var_enc - z_log_var_pri - tf.exp(-z_log_var_pri) * (
-            #        tf.exp(z_log_var_enc) + tf.square(z_mean_enc - z_mean_pri)))
-            #self.add_loss(self.beta*kl_loss)
+            z_params = tf.concat([z_params_pri, z_params_enc], axis=-1)
             
             # run decoder on data_x and z where z is sampled from encoder
             y_params, y = self.decoder([data_x, z, samples])
@@ -248,15 +262,20 @@ class VAE(tf.keras.Model):
             
             # Add beta metric
             self.add_metric(self.beta, aggregation='mean', name='beta')
-            return [y_params, z_params, y, z]
-
+            return {'y_params':y_params, 
+                    'z_params':z_params, 
+                    'y':y, 
+                    'z':z}
+        
         # Inference mode
         else:
-            z_params_pri, z = self.prior([data, samples])
-            z_params = tf.concat(2*[z_params_pri], axis=-1)
+            z_params, z = self.prior([data, samples])
             y_params, y = self.decoder([data, z, samples])
 
             if verbose == False:
                 return y
             if verbose == True:
-                return [y_params, z_params, y, z]
+                return {'y_params':y_params, 
+                        'z_params':z_params, 
+                        'y':y, 
+                        'z':z}
