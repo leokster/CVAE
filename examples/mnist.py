@@ -2,6 +2,7 @@ import tensorflow as tf
 
 from variational_autoencoder.models import VAE
 from variational_autoencoder.layers import Sampling
+from variational_autoencoder.layers import StackNTimes
 from variational_autoencoder.losses import KLDivergence
 from variational_autoencoder.callbacks import BetaScaling
 
@@ -26,16 +27,22 @@ class savefig(tf.keras.callbacks.Callback):
 
 
 def make_prior(latent_dim=2):
+    # Sample input for compatibility, ignored in MNIST example
+    samples = tf.keras.Input(shape=[], batch_size=1)
+    
     prior_input = tf.keras.Input(shape=10)
     x = tf.keras.layers.Dense(64, activation="relu")(prior_input)
     x = tf.keras.layers.Dense(16, activation="relu")(x)
     z_mean = tf.keras.layers.Dense(latent_dim, name="z_mean")(x)
     z_log_var = tf.keras.layers.Dense(latent_dim, name="z_log_var")(x)
     z_params = tf.stack([z_mean, z_log_var], axis=-1)
-    z = Sampling()([z_mean, tf.exp(z_log_var)])
-    return tf.keras.Model(prior_input, [z_params, z], name="prior")
+    z = Sampling()([z_mean, tf.exp(z_log_var/2)])
+    return tf.keras.Model([prior_input, samples], [z_params, z], name="prior")
 
 def make_encoder(latent_dim=2):
+    # Sample input for compatibility, ignored in MNIST example
+    samples = tf.keras.Input(shape=[], batch_size=1)
+    
     encoder_inputs = tf.keras.Input(shape=(28, 28, 1))
     x = tf.keras.layers.Conv2D(32, 3, activation="relu", strides=2, padding="same")(encoder_inputs)
     x = tf.keras.layers.Conv2D(64, 3, activation="relu", strides=2, padding="same")(x)
@@ -48,19 +55,23 @@ def make_encoder(latent_dim=2):
     z_mean = tf.keras.layers.Dense(latent_dim, name="z_mean")(x)
     z_log_var = tf.keras.layers.Dense(latent_dim, name="z_log_var")(x)
     z_params = tf.stack([z_mean, z_log_var], axis=-1)
-    z = Sampling()([z_mean, tf.exp(z_log_var)])
-    return tf.keras.Model([label_input, encoder_inputs], [z_params, z], name="encoder")
+    z = Sampling()([z_mean, tf.exp(z_log_var/2)])
+    return tf.keras.Model([label_input, encoder_inputs, samples], [z_params, z], name="encoder")
 
 def make_decoder(latent_dim=2):
-    latent_inputs = tf.keras.Input(shape=(latent_dim,))
-    label_input = tf.keras.Input(shape=10)
-    x = tf.keras.layers.concatenate([label_input, latent_inputs])
+    # Sample input for compatibility, ignored in MNIST example
+    samples = tf.keras.Input(shape=[], batch_size=1)
+    
+    latent_inputs = tf.keras.Input(shape=latent_dim)
+    label_inputs = tf.keras.Input(shape=10)
+
+    x = tf.keras.layers.concatenate([label_inputs, latent_inputs])
     x = tf.keras.layers.Dense(7 * 7 * 64, activation="relu")(x)
     x = tf.keras.layers.Reshape((7, 7, 64))(x)
     x = tf.keras.layers.Conv2DTranspose(64, 3, activation="relu", strides=2, padding="same")(x)
     x = tf.keras.layers.Conv2DTranspose(32, 3, activation="relu", strides=2, padding="same")(x)
-    decoder_outputs = tf.keras.layers.Conv2DTranspose(1, 3, activation="sigmoid", padding="same")(x)
-    return tf.keras.Model([label_input, latent_inputs], [decoder_outputs, decoder_outputs], name="decoder")
+    y = tf.keras.layers.Conv2DTranspose(1, 3, activation="sigmoid", padding="same")(x)
+    return tf.keras.Model([label_inputs, latent_inputs, samples], [y, y], name="decoder")
 
 
 
@@ -82,12 +93,16 @@ if __name__ == "__main__":
     encoder = make_encoder(latent_dim)
     decoder = make_decoder(latent_dim)
 
-    vae = VAE(encoder=encoder, decoder=decoder, prior=prior, beta=0.03)
+    vae = VAE(encoder=encoder, decoder=decoder, prior=prior, 
+              inference_samples_train=1,
+              inference_samples_test=1,
+              inference_samples_predict=1,
+              beta=0.03)
     vae.compile(optimizer="adam", 
-                loss={'output_1':tf.keras.losses.mean_squared_error,
-                      'output_2':KLDivergence()},
-                loss_weights={'output_1':1,
-                              'output_2':vae.beta})
+                loss={'y':tf.keras.losses.mean_squared_error,
+                      'z_params':KLDivergence()},
+                loss_weights={'y':1,
+                              'z_params':vae.beta})
     vae.fit(x=mnist_labels_one_hot, y=mnist_digits, 
             callbacks=[#BetaScaling(method="linear", min_beta=0.1, max_beta=1),
                        savefig("figures")], 

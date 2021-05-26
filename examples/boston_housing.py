@@ -1,5 +1,6 @@
 import tensorflow as tf
 from variational_autoencoder.layers import Sampling
+from variational_autoencoder.layers import StackNTimes
 from variational_autoencoder.models import VAE
 from variational_autoencoder.callbacks import BetaScaling
 from variational_autoencoder.losses import GaussianLikelihood, KLDivergence
@@ -7,7 +8,11 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 
 def make_prior(latent_dim=2):
+    sample_input = tf.keras.Input(shape=[], batch_size=1)
+    samples = tf.squeeze(sample_input)
+    
     prior_input = tf.keras.layers.Input(13)
+    samples = tf.keras.layers.Input(1)
     x = tf.keras.layers.Dense(512)(prior_input)
     x = tf.keras.layers.LeakyReLU(alpha=0.3)(x)
 
@@ -21,15 +26,22 @@ def make_prior(latent_dim=2):
     x = tf.keras.layers.LeakyReLU(alpha=0.3)(x)
 
     z_mu = tf.keras.layers.Dense(latent_dim)(x)
+    z_mu = StackNTimes(axis=1)(z_mu, samples)
     z_logvar = tf.keras.layers.Dense(latent_dim)(x)
+    z_logvar = StackNTimes(axis=1)(z_logvar, samples)
+        
     z_params = tf.stack([z_mu, z_logvar], axis=-1)
-    z_smpl = Sampling()([z_mu, tf.exp(z_logvar)])
-    return tf.keras.models.Model(prior_input, [z_params, z_smpl])
+    z_smpl = Sampling()([z_mu, tf.exp(z_logvar/2)])
+    return tf.keras.models.Model([prior_input, samples], [z_params, z_smpl])
 
 
 def make_encoder(latent_dim=2):
+    sample_input = tf.keras.Input(shape=[], batch_size=1)
+    samples = tf.squeeze(sample_input)
+    
     x_input = tf.keras.layers.Input(13)
     y_input = tf.keras.layers.Input(1)
+    samples = tf.keras.layers.Input(1)
     x = tf.keras.layers.concatenate([x_input, y_input])
 
     x = tf.keras.layers.Dense(512)(x)
@@ -44,16 +56,23 @@ def make_encoder(latent_dim=2):
     x = tf.keras.layers.Dense(512)(x)
     x = tf.keras.layers.LeakyReLU(alpha=0.3)(x)
     z_mu = tf.keras.layers.Dense(latent_dim)(x)
+    z_mu = StackNTimes(axis=1)(z_mu, samples)
     z_logvar = tf.keras.layers.Dense(latent_dim)(x)
+    z_logvar = StackNTimes(axis=1)(z_logvar, samples)
     z_params = tf.stack([z_mu, z_logvar], axis=-1)
-    z_smpl = Sampling()([z_mu, tf.exp(z_logvar)])
-    return tf.keras.models.Model([x_input, y_input], [z_params, z_smpl])
+    z_smpl = Sampling()([z_mu, tf.exp(z_logvar/2)])
+    return tf.keras.models.Model([x_input, y_input, samples], [z_params, z_smpl])
 
 
 def make_decoder(latent_dim=2):
+    sample_input = tf.keras.Input(shape=[], batch_size=1)
+    samples = tf.squeeze(sample_input)
+    
     x_input = tf.keras.layers.Input(13)
     z_input = tf.keras.layers.Input(latent_dim)
-    x = tf.keras.layers.concatenate([x_input, z_input])
+    
+    x = StackNTimes(axis=1)(x_input, samples)
+    x = tf.keras.layers.concatenate([x, z_input])
     x = tf.keras.layers.Dense(512)(x)
     x = tf.keras.layers.LeakyReLU(alpha=0.3)(x)
 
@@ -68,8 +87,8 @@ def make_decoder(latent_dim=2):
     y_mu = tf.keras.layers.Dense(1)(x)
     y_logvar = tf.keras.layers.Dense(1)(x)
     y_params = tf.keras.layers.stack([y_mu, y_logvar], axis=-1)
-    y_smpl = Sampling()([y_mu, tf.exp(y_logvar)])
-    return tf.keras.models.Model([x_input, z_input], [y_params, y_smpl])
+    y_smpl = Sampling()([y_mu, tf.exp(y_logvar/2)])
+    return tf.keras.models.Model([x_input, z_input, samples], [y_params, y_smpl])
 
 def read_index(path):
     lines = open(path).readlines()
@@ -113,10 +132,10 @@ if __name__ == "__main__":
         decoder = make_decoder(latent_dim)
 
         vae = VAE(encoder=encoder, decoder=decoder, prior=prior, beta=0)
-        vae.compile(loss={"output_1":GaussianLikelihood(),
-                          "output_2":KLDivergence()},
-                    loss_weights={'output_1':1,
-                                  'output_2':vae.beta},
+        vae.compile(loss={"y_params":GaussianLikelihood(sample_axis=True),
+                          "z_params":KLDivergence()},
+                    loss_weights={'y_params':1,
+                                  'z_params':vae.beta},
                     optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
 
 
@@ -125,7 +144,7 @@ if __name__ == "__main__":
                 validation_split=0.1)
 
         #standard_pred = ((vae.predict(x_test.repeat(100, axis=0))*y_std)+y_mean).reshape(-1,100)
-        standard_pred = (((vae.predict(x_test))*y_std)+y_mean)
+        standard_pred = (((vae.predict(x_test)[0])*y_std)+y_mean)
 
         res.append(np.mean((standard_pred-y_test)**2)**0.5)
         print(res)

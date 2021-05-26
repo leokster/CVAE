@@ -3,11 +3,15 @@
 import tensorflow as tf
 from variational_autoencoder.models import VAE
 from variational_autoencoder.layers import Sampling
+from variational_autoencoder.layers import StackNTimes
 from variational_autoencoder.evaluations import get_p_vals
 from variational_autoencoder.callbacks import BetaScaling
 from variational_autoencoder.losses import GaussianLikelihood, KLDivergence
 
 def make_prior(latent_dim=2, input_dim=1):
+    sample_input = tf.keras.Input(shape=[], batch_size=1)
+    samples = tf.squeeze(sample_input)
+    
     input_x = tf.keras.Input(input_dim)
     x = tf.keras.layers.Dense(128, activation="relu")(input_x)
     x = tf.keras.layers.Dropout(0.2)(x)
@@ -15,13 +19,18 @@ def make_prior(latent_dim=2, input_dim=1):
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.Dense(128, activation="relu")(x)
     z_mean = tf.keras.layers.Dense(latent_dim, name="z_mean")(x)
+    z_mean = StackNTimes(axis=1)(z_mean, samples)
     z_log_var = tf.keras.layers.Dense(latent_dim, name="z_log_var")(x)
+    z_log_var = StackNTimes(axis=1)(z_log_var, samples)
     z_params = tf.stack([z_mean, z_log_var], axis=-1)
-    z = Sampling()([z_mean, tf.exp(z_log_var)])
-    return tf.keras.models.Model(input_x, [z_params, z])
+    z = Sampling()([z_mean, tf.exp(z_log_var/2)])
+    return tf.keras.models.Model([input_x, sample_input], [z_params, z])
 
 
 def make_encoder(latent_dim=2, output_dim=1, input_dim=1):
+    sample_input = tf.keras.Input(shape=[], batch_size=1)
+    samples = tf.squeeze(sample_input)
+    
     input_x = tf.keras.Input(input_dim)
     input_y = tf.keras.Input(output_dim)
     x = tf.keras.layers.Concatenate()([input_x, input_y])
@@ -31,16 +40,22 @@ def make_encoder(latent_dim=2, output_dim=1, input_dim=1):
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.Dense(128, activation="relu")(x)
     z_mean = tf.keras.layers.Dense(latent_dim, name="z_mean")(x)
+    z_mean = StackNTimes(axis=1)(z_mean, samples)
     z_log_var = tf.keras.layers.Dense(latent_dim, name="z_log_var")(x)
+    z_log_var = StackNTimes(axis=1)(z_log_var, samples)
     z_params = tf.stack([z_mean, z_log_var], axis=-1)
-    z = Sampling()([z_mean, tf.exp(z_log_var)])
-    return tf.keras.models.Model([input_x, input_y], [z_params, z])
+    z = Sampling()([z_mean, tf.exp(z_log_var/2)])
+    return tf.keras.models.Model([input_x, input_y, sample_input], [z_params, z])
 
 
 def make_decoder(latent_dim=2,  output_dim=1, input_dim=1):
-    input_z = tf.keras.Input(latent_dim)
+    sample_input = tf.keras.Input(shape=[], batch_size=1)
+    samples = tf.squeeze(sample_input)
+    
+    input_z = tf.keras.Input((None, latent_dim))
     input_x = tf.keras.Input(input_dim)
-    x = tf.keras.layers.Concatenate()([input_x, input_z])
+    x = StackNTimes(axis=1)(input_x, samples)
+    x = tf.keras.layers.Concatenate()([x, input_z])
     x = tf.keras.layers.Dense(128, activation="relu")(x)
     x = tf.keras.layers.Dropout(0.2)(x)
     x = tf.keras.layers.Dense(128, activation="relu")(x)
@@ -49,8 +64,8 @@ def make_decoder(latent_dim=2,  output_dim=1, input_dim=1):
     y_mean = tf.keras.layers.Dense(output_dim, name="y_mean")(x)
     y_log_var = tf.keras.layers.Dense(output_dim, name="y_log_var")(x)
     y_params = tf.stack([y_mean, y_log_var], axis=-1)
-    y = Sampling()([y_mean, tf.exp(y_log_var)])
-    return tf.keras.models.Model([input_x, input_z], [y_params, y])
+    y = Sampling()([y_mean, tf.exp(y_log_var/2)])
+    return tf.keras.models.Model([input_x, input_z, sample_input], [y_params, y])
 
 
 
@@ -93,21 +108,21 @@ if __name__ == "__main__":
 
         model = VAE(encoder, decoder, prior)
         model.compile(optimizer="adam",
-                      loss={'output_1':GaussianLikelihood(),
-                            'output_2':KLDivergence()},
-                      loss_weights={'output_1':1,
-                                    'output_2':model.beta})
+                      loss={'y_params':GaussianLikelihood(sample_axis=True),
+                            'z_params':KLDivergence()},
+                      loss_weights={'y_params':1,
+                                    'z_params':model.beta})
 
         model.fit(data_x, data_y, epochs=50, callbacks=BetaScaling(method="linear"))
 
         today = np.array([0,0,0,0,1,0,0,0.94520548,0])
-        test_x = today.reshape(1,-1).repeat(10000, axis=0)
-        model_output = model(test_x, verbose=True)
+        test_x = today.reshape(1,-1)
+        model_output = model(test_x, samples=10000, verbose=True)
         res = scaler.inverse_transform(
-            model_output[0][...,0]
+            model_output['y_params'][0,...,0]
         )
         res2 = scaler.inverse_transform(
-            model_output[2]
+            model_output['y'][0]
         )
 
         fig, ax = plt.subplots(1, 2, figsize=(30, 10))
