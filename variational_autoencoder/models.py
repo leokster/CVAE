@@ -27,30 +27,41 @@ class VAE(tf.keras.Model):
         (including) batch sizes.
 
         Input parameters:
-        :param encoder: tf.keras.Model taking a list of two tensors as input [X, y] and outputs
+        :param encoder: tf.keras.Model taking a list of three tensors as input [X, y, samples] and outputs
         a list of 3 tensors [Z_mean, Z_logvar, Z_smpl] in the latent space, where Z_mean is the mean
         of a Gaussian, Z_logvar the logvariance of the Gaussian and Z_smpl one sample of the corresponding
         distribution (can be realized with the Sampling layer).
-        :pram prior: tf.keras.Model taking a tensor X as input and outputs a list of 3 tensors as the encoder
+        :param prior: tf.keras.Model taking a list of tensors [X, samples] as input and outputs a list of 3 tensors as the encoder
         does
-        :param decoder: tf.keras.Model taking a list of two tensors [X, Z]
+        :param decoder: tf.keras.Model taking a list of three tensors [X, Z, samples]
         where Z are samples of the latent space and maps it to the target
-        space y. Note: if the decoder has multiple outputs (more than one tensor) during perdiction only the last one
-        is returned (if training=False). This allows to build parametric distributions. See example below.
-
+        space y.
+        
+        Call method returns:
+        In training mode  - A dict of {'y_params':y_params, 'z_params': z_params,
+                                       'y':y, 'z':z}
+        In inference mode - The same dict if verbose is set to true,
+                            otherwise simply outputs the sampled y.
 
         Example:
 
         def make_prior(latent_dim=2):
+            sample_input = tf.keras.Input(shape=[], batch_size=1)
+            samples = tf.squeeze(sample_input)
+            
             prior_input = tf.keras.layers.Input(13)
             # add some layers
             # x = tf.keras.layers.Dense(64)
             z_mu = tf.keras.layers.Dense(latent_dim)(x)
             z_logvar = tf.keras.layers.Dense(latent_dim)(x)
             z_smpl = Sampling()([z_mu, z_logvar])
-            return tf.keras.models.Model(prior_input, [z_mu, z_logvar, z_smpl])
+            return tf.keras.models.Model([prior_input, sample_input], 
+                                         [z_mu, z_logvar, z_smpl])
 
         def make_encoder(latent_dim=2):
+            sample_input = tf.keras.Input(shape=[], batch_size=1)
+            samples = tf.squeeze(sample_input)
+            
             x_input = tf.keras.layers.Input(13)
             y_input = tf.keras.layers.Input(1)
             x = tf.keras.layers.concatenate([x_input, y_input])
@@ -59,9 +70,13 @@ class VAE(tf.keras.Model):
             z_mu = tf.keras.layers.Dense(latent_dim)(x)
             z_logvar = tf.keras.layers.Dense(latent_dim)(x)
             z_smpl = Sampling()([z_mu, z_logvar])
-            return tf.keras.models.Model([x_input, y_input], [z_mu, z_logvar, z_smpl])
+            return tf.keras.models.Model([x_input, y_input, sample_input], 
+                                         [z_mu, z_logvar, z_smpl])
 
         def make_decoder(latent_dim=2):
+            sample_input = tf.keras.Input(shape=[], batch_size=1)
+            samples = tf.squeeze(sample_input)
+    
             x_input = tf.keras.layers.Input(13)
             z_input = tf.keras.layers.Input(latent_dim)
             x = tf.keras.layers.concatenate([x_input, z_input])
@@ -71,7 +86,8 @@ class VAE(tf.keras.Model):
             y_logvar = tf.keras.layers.Dense(1)(x)
             y_smpl = Sampling()([y_mu, y_logvar])
             y_params = tf.keras.layers.concatenate([y_mu, y_logvar], axis=0)
-            return tf.keras.models.Model([x_input, z_input], [y_params, y_smpl])
+            return tf.keras.models.Model([x_input, z_input, sample_input],
+                                         [y_params, y_smpl])
         """
         self.beta = tf.Variable(kwargs.pop("beta", 1) * 1.0, trainable=False)
         super(VAE, self).__init__(**kwargs)
@@ -219,6 +235,7 @@ class VAE(tf.keras.Model):
             self.r_loss = self.r_loss(normalize=self.output_dim)
 
     def call(self, data, training=False, samples=1, verbose=False):
+        samples = tf.cast(samples, tf.int32)
         
         # Training mode
         if training:

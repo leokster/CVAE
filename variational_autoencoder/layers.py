@@ -11,17 +11,90 @@ from tensorflow.python.framework import dtypes
 
 
 class Sampling(tf.keras.layers.Layer):
-    """Uses (z_mean, z_log_var) to sample z, the vector encoding a digit."""
+    """Takes tensors of parameters as input and uses a tf.random.Generator
+    object to sample element-wise from a desired distribution.
+    Can also be passed parameters as scalars, along with a desired shape
+    to output a tensor sampled from identical parameters.
+    
+    Inputs to constructor:
+    dist - A string denoting a distribution from tf.random.Generator.
+           Defaults to 'normal'."""
     
     def __init__(self, dist='normal'):
         super(Sampling, self).__init__()
         self.rn_gen = tf.random.Generator.from_non_deterministic_state()
         self.dist = getattr(self.rn_gen, dist)
 
-    def call(self, params):
-        sample = self.dist(tf.shape(params[0]), *params)
+    def call(self, params, shape=None):
+        """Inputs:
+        params - A list of parameters that has to be compatible with the
+                 chosen distribution. Can be either a list of tensors, such
+                 as [mu, sigma], where mu and sigma are float32 tensors,
+                 or a list of scalars such as [0, 1], in which case the
+                 desired output shape needs to be passed explicitly.
+        shape -  A tensorshape object, optionally passed to sample from
+                 scalar parameters."""
+                 
+        if shape == None:
+            shape = tf.shape(params[0])
+        sample = self.dist(shape, *params)
         return sample
 
+class StackNTimes(tf.keras.layers.Layer):
+    """Expands dimension of input tensor and stacks n times on new axis.
+    Works dynamically, with the amount of stacks n as a tensor with 
+    data type int32, or a python or numpy integer type.
+    
+    Inputs to constructor:
+    axis - The axis to stack on, ranging from (-old_dim - 1) to (old_dim)."""
+    
+    def __init__(self, axis=1):
+        super(StackNTimes, self).__init__()
+        self.axis = axis
+        
+    def call(self, inputs, n):
+        """Inputs:
+        inputs - The tensor to stack multiple times. Can be a tensor of any
+                 rank or data type.
+        n      - The amount of times to stack the tensor. Can be a tensor
+                 or any python or numpy integer type. Will be coverted to
+                 a tensor of int32 type internally."""
+        old_dim = len(tf.shape(inputs))
+        n = tf.cast(tf.expand_dims(n, axis=0), tf.int32)
+        
+        if (self.axis > old_dim) or (self.axis < -old_dim - 1):
+            raise ValueError(f'Tried to stack on index {self.axis}' + 
+                             f' for tensor with {old_dim} dimensions.')
+            
+        elif (self.axis == 0) or (self.axis == -old_dim - 1):
+            multiples = tf.concat([n, 
+                                   tf.ones([old_dim], dtype=tf.int32)], 
+                                  axis=0)
+            
+        elif (self.axis == -1):
+            multiples = tf.concat([tf.ones([old_dim], dtype=tf.int32), 
+                                   n], 
+                                  axis=0)
+            
+        elif self.axis > 0:
+            multiples = tf.concat([tf.ones([self.axis], 
+                                           dtype=tf.int32), 
+                                   n, 
+                                   tf.ones([old_dim - self.axis], 
+                                           dtype=tf.int32)], 
+                                  axis=0)
+            
+        elif self.axis < 0:
+            multiples = tf.concat([tf.ones([old_dim + 1 + self.axis], 
+                                           dtype=tf.int32), 
+                                   n, 
+                                   tf.ones([-self.axis - 1], 
+                                           dtype=tf.int32)], 
+                                  axis=0)
+
+        h = tf.expand_dims(inputs, axis=self.axis)
+        outputs = tf.tile(h, multiples)
+        return outputs
      
 class Dense2d(tf.keras.layers.Layer):
   """Extension of the regular Dense layer to a 3d (and higher) input
