@@ -97,7 +97,7 @@ if __name__ == "__main__":
               inference_samples_train=1,
               inference_samples_test=1,
               inference_samples_predict=1,
-              beta=0.03)
+              beta=0.03/28/28)
     vae.compile(optimizer="adam", 
                 loss={'y':tf.keras.losses.mean_squared_error,
                       'z_params':KLDivergence()},
