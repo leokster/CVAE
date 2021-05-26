@@ -1,6 +1,9 @@
+from operator import invert
 import tensorflow as tf
 from tensorflow.python.keras.engine import data_adapter
 from tensorflow.python.eager import backprop
+from variational_autoencoder.layers import AddSamplingAxis
+
 if int(tf.__version__.replace(".", "")) < 240:
     from tensorflow.python.keras.engine.training import _minimize
 
@@ -20,6 +23,7 @@ class VAE(tf.keras.Model):
                  inference_samples_train=10,
                  inference_samples_test=10, 
                  inference_samples_predict=1000,
+                 do_sampling=False,
                  **kwargs):
         """
         Initialize the Conditional Variational Autoencoder model as subclass of tf.keras.Model.
@@ -36,6 +40,11 @@ class VAE(tf.keras.Model):
         :param decoder: tf.keras.Model taking a list of three tensors [X, Z, samples]
         where Z are samples of the latent space and maps it to the target
         space y.
+        :param do_sampling: can be either "flattened", "stacked" or False. If "flattened", "stacked" the engine will automatically
+        add copies of the input either in the batch dimension (for flattened) or as an additional dimension (for stacked) before
+        passing to the individual models. If set to False, it will not create any samples automatically and they have to be created
+        manually in the individual submodels (prior, encoder, decoder). The call method returns the sampling axis (if not False) anyway
+        separate again, no matter whether do_sampling is "flattened" or "stacked".
         
         Call method returns:
         In training mode  - A dict of {'y_params':y_params, 'z_params': z_params,
@@ -101,6 +110,8 @@ class VAE(tf.keras.Model):
         self.inference_samples_train = inference_samples_train
         self.inference_samples_test = inference_samples_test
         self.inference_samples_predict = inference_samples_predict
+        self.do_sampling = do_sampling
+        self.add_sampling_axis = AddSamplingAxis(sampling=do_sampling)
 
         #if _get_output_len(self.prior) != 3:
         #    raise ValueError("The prior must contain 3 output dimensions. It only",
@@ -251,6 +262,10 @@ class VAE(tf.keras.Model):
                 raise ValueError('''Data must be length 2 tuple or list of 
                                  type (data_x, data_y)''')
 
+            if self.do_sampling in ("flattened", "stacked"):
+                data_x = self.add_sampling_axis(data_x, samples)
+                data_y = self.add_sampling_axis(data_y, samples)
+
             # Run encoder on x and y
             z_params_enc, z = self.encoder([data_x, data_y, samples])
             
@@ -279,20 +294,26 @@ class VAE(tf.keras.Model):
             
             # Add beta metric
             self.add_metric(self.beta, aggregation='mean', name='beta')
-            return {'y_params':y_params, 
+            result = {'y_params':y_params, 
                     'z_params':z_params, 
                     'y':y, 
                     'z':z}
+            
+            result = self.add_sampling_axis(result, samples, invert=True)
+            return result
         
         # Inference mode
         else:
+            data = self.add_sampling_axis(data, samples)
             z_params, z = self.prior([data, samples])
             y_params, y = self.decoder([data, z, samples])
 
             if verbose == False:
-                return y
+                return self.add_sampling_axis(y, samples, invert=True)
             if verbose == True:
-                return {'y_params':y_params, 
+                result =  {'y_params':y_params, 
                         'z_params':z_params, 
                         'y':y, 
                         'z':z}
+                result = self.add_sampling_axis(result, samples, invert=True)
+                return result
