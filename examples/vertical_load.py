@@ -19,9 +19,9 @@ def make_prior(latent_dim=2):
     x = tf.keras.layers.Dense(128)(x)
     x = tf.keras.layers.Dropout(0.2)(x)
     z_mean = tf.keras.layers.Dense(latent_dim, name="z_mean")(x)
-    z_mean = StackNTimes(axis=1)(z_mean, samples)
+    #z_mean = StackNTimes(axis=1)(z_mean, samples)
     z_log_var = tf.keras.layers.Dense(latent_dim, name="z_log_var")(x)
-    z_log_var = StackNTimes(axis=1)(z_log_var, samples)
+    #z_log_var = StackNTimes(axis=1)(z_log_var, samples)
     z_params = tf.stack([z_mean, z_log_var], axis=-1)
     z = Sampling()([z_mean, tf.exp(z_log_var/2)])
     return tf.keras.models.Model([input_x, sample_input], [z_params, z])
@@ -43,9 +43,9 @@ def make_encoder(latent_dim=2, output_dim=1):
     x = tf.keras.layers.Dense(128)(x)
     x = tf.keras.layers.Dropout(0.2)(x)
     z_mean = tf.keras.layers.Dense(latent_dim, name="z_mean")(x)
-    z_mean = StackNTimes(axis=1)(z_mean, samples)
+    #z_mean = StackNTimes(axis=1)(z_mean, samples)
     z_log_var = tf.keras.layers.Dense(latent_dim, name="z_log_var")(x)
-    z_log_var = StackNTimes(axis=1)(z_log_var, samples)
+    #z_log_var = StackNTimes(axis=1)(z_log_var, samples)
     z_params = tf.stack([z_mean, z_log_var], axis=-1)
     z = Sampling()([z_mean, tf.exp(z_log_var/2)])
     return tf.keras.models.Model([input_x, input_y, sample_input], [z_params, z])
@@ -62,9 +62,9 @@ def make_decoder(latent_dim=2,  output_dim=1):
     x = tf.keras.layers.Conv1D(10,4)(x)
     x = tf.keras.layers.MaxPool1D(4)(x)
     x = tf.keras.layers.Flatten()(x)
-    x = StackNTimes(axis=1)(input_x, samples)
+    #x = StackNTimes(axis=1)(input_x, samples)
     
-    input_z = tf.keras.Input((None, latent_dim))
+    input_z = tf.keras.Input(latent_dim)
     x = tf.keras.layers.Concatenate(axis=-1)([x,input_z])
     x = tf.keras.layers.Dense(128, activation="relu")(x)
     x = tf.keras.layers.Dropout(0.2)(x)
@@ -85,7 +85,7 @@ if __name__ == "__main__":
     import seaborn as sns
 
     #load data
-    data = pd.read_csv('../data/swissgrid_total_load.csv', index_col=0)
+    data = pd.read_csv('./data/swissgrid_total_load.csv', index_col=0)
 
     #initialize the scaler for the load data
     scaler = StandardScaler()
@@ -113,7 +113,7 @@ if __name__ == "__main__":
     y = np.array(data_window.iloc[:,history_len:]).reshape(-1,prediction_len)
 
     #build VAE model
-    model = VAE(encoder, decoder, prior, training_mode_samples=2)
+    model = VAE(encoder, decoder, prior, training_mode_samples=2, do_sampling="flattened")
     model.compile(optimizer="adam", 
                   loss={'y_params':GaussianLikelihood(sample_axis=True),
                         'z_params':KLDivergence()},
@@ -121,6 +121,7 @@ if __name__ == "__main__":
                                 'z_params':model.beta})
 
     #fit model
+    #tf.config.experimental_run_functions_eagerly(True)
     model.fit(x, y, epochs=5, callbacks=BetaScaling(method="linear"))
 
     #choose random datapoint
