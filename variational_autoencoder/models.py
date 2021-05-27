@@ -24,6 +24,7 @@ class VAE(tf.keras.Model):
                  inference_samples_test=10, 
                  inference_samples_predict=1000,
                  do_sampling=False,
+                 pass_samples_to_model=True,
                  **kwargs):
         """
         Initialize the Conditional Variational Autoencoder model as subclass of tf.keras.Model.
@@ -112,6 +113,7 @@ class VAE(tf.keras.Model):
         self.inference_samples_predict = inference_samples_predict
         self.do_sampling = do_sampling
         self.add_sampling_axis = AddSamplingAxis(sampling=do_sampling)
+        self.pass_samples_to_model = pass_samples_to_model
 
         #if _get_output_len(self.prior) != 3:
         #    raise ValueError("The prior must contain 3 output dimensions. It only",
@@ -266,18 +268,28 @@ class VAE(tf.keras.Model):
                 data_x = self.add_sampling_axis(data_x, samples)
                 data_y = self.add_sampling_axis(data_y, samples)
 
-            # Run encoder on x and y
-            z_params_enc, z = self.encoder([data_x, data_y, samples])
-            
-            # Run prior on x
-            z_params_pri, _ = self.prior([data_x, samples])
+            if self.pass_samples_to_model:
+                # Run encoder on x and y
+                z_params_enc, z = self.encoder([data_x, data_y, samples])
+
+                # Run prior on x
+                z_params_pri, _ = self.prior([data_x, samples])
+                
+                # run decoder on data_x and z where z is sampled from encoder
+                y_params, y = self.decoder([data_x, z, samples])
+            else:
+                # Run encoder on x and y
+                z_params_enc, z = self.encoder([data_x, data_y])
+
+                # Run prior on x
+                z_params_pri, _ = self.prior([data_x])
+                
+                # run decoder on data_x and z where z is sampled from encoder
+                y_params, y = self.decoder([data_x, z])
             
             # Bundle latent parameters to pass to loss function
             z_params = tf.concat([z_params_pri, z_params_enc], axis=-1)
-            
-            # run decoder on data_x and z where z is sampled from encoder
-            y_params, y = self.decoder([data_x, z, samples])
-            
+
             # Add Kullback-Leibler loss and metric if using add_loss API
             if self.kl_loss:
                 kl_loss = self.kl_loss(data_y, z_params)
@@ -304,9 +316,14 @@ class VAE(tf.keras.Model):
         
         # Inference mode
         else:
-            data = self.add_sampling_axis(data, samples)
-            z_params, z = self.prior([data, samples])
-            y_params, y = self.decoder([data, z, samples])
+            if self.pass_samples_to_model:
+                data = self.add_sampling_axis(data, samples)
+                z_params, z = self.prior([data, samples])
+                y_params, y = self.decoder([data, z, samples])
+            else:
+                data = self.add_sampling_axis(data)
+                z_params, z = self.prior([data])
+                y_params, y = self.decoder([data, z])
 
             if verbose == False:
                 return self.add_sampling_axis(y, samples, invert=True)
