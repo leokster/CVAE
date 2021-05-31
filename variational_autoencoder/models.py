@@ -316,12 +316,11 @@ class VAE(tf.keras.Model):
         
         # Inference mode
         else:
+            data = self.add_sampling_axis(data, samples)
             if self.pass_samples_to_model:
-                data = self.add_sampling_axis(data, samples)
                 z_params, z = self.prior([data, samples])
                 y_params, y = self.decoder([data, z, samples])
             else:
-                data = self.add_sampling_axis(data)
                 z_params, z = self.prior([data])
                 y_params, y = self.decoder([data, z])
 
