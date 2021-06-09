@@ -191,7 +191,8 @@ class VAE(tf.keras.Model):
         x, y, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
 
         # Run in training mode to calculate loss
-        y_pred = self((x,y), training=True)
+        y_pred = self((x,y), training=True,
+                      samples=self.training_mode_samples)
         
         # Updates stateful loss metrics.
         self.compiled_loss(y, y_pred, sample_weight, 
