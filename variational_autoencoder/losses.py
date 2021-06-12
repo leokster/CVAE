@@ -1,7 +1,7 @@
 from tensorflow.keras.losses import Loss
 import tensorflow as tf
 import math
-from variational_autoencoder.layers import StackNTimes
+from .layers import StackNTimes
 
 class GaussianLikelihood(Loss):
     """Gaussian likelihood loss with optional normalization. Sums over

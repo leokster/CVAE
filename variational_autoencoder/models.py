@@ -2,7 +2,7 @@ from operator import invert
 import tensorflow as tf
 from tensorflow.python.keras.engine import data_adapter
 from tensorflow.python.eager import backprop
-from variational_autoencoder.layers import AddSamplingAxis
+from .layers import AddSamplingAxis
 
 if int(tf.__version__.replace(".", "")) < 240:
     from tensorflow.python.keras.engine.training import _minimize
