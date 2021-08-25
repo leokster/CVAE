@@ -2,7 +2,7 @@ from operator import invert
 import tensorflow as tf
 from tensorflow.python.keras.engine import data_adapter
 from tensorflow.python.eager import backprop
-from .layers import AddSamplingAxis
+from .layers import StackNTimes
 
 if int(tf.__version__.replace(".", "")) < 240:
     from tensorflow.python.keras.engine.training import _minimize
@@ -17,7 +17,8 @@ def _get_output_len(layer):
 
     
 class VAE(tf.keras.Model):
-    def __init__(self, encoder, decoder, prior, 
+    def __init__(self, encoder_zero, decoder_zero, prior_zero,
+                 encoder=None, decoder=None, prior=None, 
                  kl_loss=None, r_loss=None, latent_dim=None, 
                  training_mode_samples=1, 
                  inference_samples_train=10,
@@ -99,8 +100,12 @@ class VAE(tf.keras.Model):
             return tf.keras.models.Model([x_input, z_input, sample_input],
                                          [y_params, y_smpl])
         """
+        
         self.beta = tf.Variable(kwargs.pop("beta", 1) * 1.0, trainable=False)
         super(VAE, self).__init__(**kwargs)
+        self.encoder_zero = encoder_zero
+        self.decoder_zero = decoder_zero
+        self.prior_zero = prior_zero
         self.encoder = encoder
         self.decoder = decoder
         self.prior = prior
@@ -111,17 +116,7 @@ class VAE(tf.keras.Model):
         self.inference_samples_train = inference_samples_train
         self.inference_samples_test = inference_samples_test
         self.inference_samples_predict = inference_samples_predict
-        self.do_sampling = do_sampling
-        self.add_sampling_axis = AddSamplingAxis(sampling=do_sampling)
-        self.pass_samples_to_model = pass_samples_to_model
-
-        #if _get_output_len(self.prior) != 3:
-        #    raise ValueError("The prior must contain 3 output dimensions. It only",
-        #                     "contains {} output dimensions".format(_get_output_len(self.prior)))
-
-        #if _get_output_len(self.encoder) != 3:
-        #    raise ValueError("The encoder must contain 3 output dimensions. It only",
-        #                     "contains {} output dimensions".format(_get_output_len(self.encoder)))
+        self.stack = StackNTimes(axis=1)
 
     def train_step(self, data):
         """The logic for one training step.
@@ -141,6 +136,7 @@ class VAE(tf.keras.Model):
           values of the `Model`'s metrics are returned. Example:
           `{'loss': 0.2, 'accuracy': 0.7}`.
         """
+        
         # These are the only transformations `Model.fit` applies to user-input
         # data when a `tf.data.Dataset` is provided. These utilities will be exposed
         # publicly.
@@ -161,7 +157,7 @@ class VAE(tf.keras.Model):
         
         # Run in inference mode for other metrics
         if self.compiled_metrics._metrics is not None:
-            y_pred_inference = self(x, training=False, 
+            y_pred_inference = self((x, y[:-1]), training=False, 
                                     samples=self.inference_samples_train,
                                     verbose=True)
             self.compiled_metrics.update_state(y, y_pred_inference, 
@@ -187,6 +183,7 @@ class VAE(tf.keras.Model):
           `tf.keras.callbacks.CallbackList.on_train_batch_end`. Typically, the
           values of the `Model`'s metrics are returned.
         """
+        
         data = data_adapter.expand_1d(data)
         x, y, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
 
@@ -200,7 +197,7 @@ class VAE(tf.keras.Model):
         
         # Run in inference mode for other metrics
         if self.compiled_metrics._metrics is not None:
-            y_pred_inference = self(x, training=False, 
+            y_pred_inference = self((x, y[:-1]), training=False, 
                                     samples=self.inference_samples_test, 
                                     verbose=True)
             self.compiled_metrics.update_state(y, y_pred_inference, 
@@ -222,25 +219,41 @@ class VAE(tf.keras.Model):
         Returns:
             The result of one inference step, typically the output of calling the
             `Model` on data.
-    """
-        data = data_adapter.expand_1d(data)
-        x, _, _ = data_adapter.unpack_x_y_sample_weight(data)
+        """
         
-        return self(x, training=False, samples=self.inference_samples_predict)
+        data = data_adapter.expand_1d(data)
+        x, y, _ = data_adapter.unpack_x_y_sample_weight(data)
+        
+        return self((x, y[:-1]), training=False, 
+                    samples=self.inference_samples_predict)
 
     def build(self, input_shape):
         # Instantiate networks if passed as subclasses
+        if isinstance(self.encoder_zero, type):
+            self.encoder_zero = self.encoder(latent_dim=self.latent_dim)
+        if isinstance(self.prior_zero, type):
+            self.prior_zero = self.prior(latent_dim=self.latent_dim)
+        if isinstance(self.decoder_zero, type):
+            assert isinstance(input_shape, (list, tuple)), (
+                '''Cannot infer decoder output shape from x data only.
+                Please call model on (x,y) in training mode to build'''
+                )
+            self.output_dim = input_shape[-1][-1][-1]
+            self.decoder = self.decoder(output_dim=self.output_dim)
         if isinstance(self.encoder, type):
-            self.encoder = self.encoder(latent_dim=self.latent_dim)
+            self.encoder = self.encoder(latent_dim=self.latent_dim,
+                                        encoder_zero=self.encoder_zero)
         if isinstance(self.prior, type):
-            self.prior = self.prior(latent_dim=self.latent_dim)
+            self.prior = self.prior(latent_dim=self.latent_dim,
+                                    prior_zero=self.prior_zero)
         if isinstance(self.decoder, type):
             assert isinstance(input_shape, (list, tuple)), (
                 '''Cannot infer decoder output shape from x data only.
                 Please call model on (x,y) in training mode to build'''
                 )
             self.output_dim = input_shape[-1][-1]
-            self.decoder = self.decoder(output_dim=self.output_dim)
+            self.decoder = self.decoder(output_dim=self.output_dim,
+                                        decoder_zero=self.decoder_zero)
             
         # Instantiate losses if passed as subclasses
         if isinstance(self.kl_loss, type):
@@ -250,7 +263,7 @@ class VAE(tf.keras.Model):
 
     def call(self, data, training=False, samples=1, verbose=False):
         samples = tf.cast(samples, tf.int32)
-        
+               
         # Training mode
         if training:
             
@@ -265,30 +278,74 @@ class VAE(tf.keras.Model):
                 raise ValueError('''Data must be length 2 tuple or list of 
                                  type (data_x, data_y)''')
 
-            if self.do_sampling in ("flattened", "stacked"):
-                data_x = self.add_sampling_axis(data_x, samples)
-                data_y = self.add_sampling_axis(data_y, samples)
+            # Split off data for zeroth timestep
+            data_x_zero = self.stack(data_x[0], samples)
+            data_y_zero = self.stack(data_y[0], samples)
 
-            if self.pass_samples_to_model:
-                # Run encoder on x and y
-                z_params_enc, z = self.encoder([data_x, data_y, samples])
+            # Keep data of other timesteps for iteration
+            data_x_rest = data_x[1:]
+            data_y_rest = data_y[1:]
 
-                # Run prior on x
-                z_params_pri, _ = self.prior([data_x, samples])
-                
-                # run decoder on data_x and z where z is sampled from encoder
-                y_params, y = self.decoder([data_x, z, samples])
-            else:
-                # Run encoder on x and y
-                z_params_enc, z = self.encoder([data_x, data_y])
-
-                # Run prior on x
-                z_params_pri, _ = self.prior([data_x])
-                
-                # run decoder on data_x and z where z is sampled from encoder
-                y_params, y = self.decoder([data_x, z])
+            # Run zeroth timestep
+            z_params_enc_zero, z_zero = self.encoder_zero([data_x_zero, 
+                                                           data_y_zero])
             
-            # Bundle latent parameters to pass to loss function
+            z_params_pri_zero, _ = self.prior_zero([data_x_zero])
+            
+            y_params_zero, y_zero = self.decoder_zero([data_x_zero, 
+                                                       z_zero])
+            
+            # Initialize lists for other results of other timesteps
+            z_params_enc = [z_params_enc_zero]
+            z = [z_zero]
+            
+            z_params_pri = [z_params_pri_zero]
+            
+            y_params = [y_params_zero]
+            y = [y_zero]
+            
+            # Initialize previous values of y and z
+            y_p = data_y_zero
+            z_p = z_zero
+            
+            # Run other timesteps
+            for data_x_t, data_y_t in zip(data_x_rest, data_y_rest):
+                
+                data_x_t = self.stack(data_x_t, samples)
+                data_y_t = self.stack(data_y_t, samples)
+                
+                z_params_enc_t, z_t = self.encoder([data_x_t, 
+                                                    data_y_t,
+                                                    z_p])
+            
+                z_params_pri_t, _ = self.prior([data_x_t,
+                                                z_p])
+            
+                y_params_t, y_t = self.decoder([data_x_t, 
+                                                z_t,
+                                                y_p])
+                
+                # Append results to lists
+                z_params_enc.append(z_params_enc_t)
+                z.append(z_t)
+                
+                z_params_pri.append(z_params_pri_t)
+                
+                y_params.append(y_params_t)
+                y.append(y_t)
+                
+                # Overwrite previous values of y and z
+                y_p = data_y_t
+                z_p = z_t
+
+            # Concatenate for loss computation
+            z_params_enc = tf.stack(z_params_enc, axis=-2)
+            z_params_pri = tf.stack(z_params_pri, axis=-2)
+            y_params = tf.stack(y_params, axis=-2)
+            
+            z = tf.stack(z, axis=-1)
+            y = tf.stack(y, axis=-1)
+            
             z_params = tf.concat([z_params_pri, z_params_enc], axis=-1)
 
             # Add Kullback-Leibler loss and metric if using add_loss API
@@ -307,32 +364,81 @@ class VAE(tf.keras.Model):
             
             # Add beta metric
             self.add_metric(self.beta, aggregation='mean', name='beta')
-            result = {'y_params':y_params, 
-                    'z_params':z_params, 
-                    'y':y, 
-                    'z':z}
             
-            result = self.add_sampling_axis(result, samples, invert=True)
+            result = {'y_params':y_params, 
+                      'z_params':z_params, 
+                      'y':y, 
+                      'z':z}
+            
             return result
         
         # Inference mode
         else:
-            if self.do_sampling in ("flattened", "stacked"):
-                data = self.add_sampling_axis(data, samples)
-                
-            if self.pass_samples_to_model:
-                z_params, z = self.prior([data, samples])
-                y_params, y = self.decoder([data, z, samples])
+                     
+            # Unpack data
+            if isinstance(data, (list, tuple)):
+                if len(data) == 2:
+                    data_x, data_y = data
+                elif len(data) == 1:
+                    data_x = data[0]
+                    data_y = None
+                else:
+                    raise ValueError('''Data must be length 2 tuple or list of 
+                                     type (data_x, data_y) or length 1 tuple
+                                     or list of type (data_x)''')
             else:
-                z_params, z = self.prior([data])
-                y_params, y = self.decoder([data, z])
-
+                raise ValueError('''Data must be length 2 tuple or list of 
+                                 type (data_x, data_y) or length 1 tuple
+                                 or list of type (data_x)''')
+            
+            # Run in bootstrap mode if no y passed
+            if data_y is None:
+            
+                z_params, z = self.prior_zero([data_x])
+            
+                y_params, y = self.decoder_zero([data_x, z])
+                
+            # Run in recurrent mode otherwise:
+            else: 
+                
+                # Split off x for the timestep to be predicted
+                data_x_last = self.stack(data_x[-1], samples)
+                data_x_rest = data_x[:-1]
+                
+                # Split off data for zeroth timestep
+                data_x_zero = self.stack(data_x[0], samples)
+                data_y_zero = self.stack(data_y[0], samples)
+                
+                # Run zeroth timestep
+                _, z_zero = self.encoder_zero([data_x_zero, data_y_zero])
+                
+                # Initialize previous values of z
+                z_p = z_zero
+                
+                # Run middle timesteps
+                for data_x_t, data_y_t in zip(data_x_rest, data_y_rest):
+                
+                    data_x_t = self.stack(data_x_t, samples)
+                    data_y_t = self.stack(data_y_t, samples)
+                
+                    _, z_p = self.encoder([data_x_t, data_y_t, z_p])
+                    
+                # Run last timestep
+                y_p = self.stack(data_y[-1], samples)
+                
+                z_params, z = self.prior([data_x_last, z_p])
+                
+                y_params, y = self.decoder([data_x_t, z, y_p])
+            
+            # Return results
             if verbose == False:
-                return self.add_sampling_axis(y, samples, invert=True)
+                
+                return y
+            
             if verbose == True:
                 result =  {'y_params':y_params, 
-                        'z_params':z_params, 
-                        'y':y, 
-                        'z':z}
-                result = self.add_sampling_axis(result, samples, invert=True)
+                           'z_params':z_params, 
+                           'y':y, 
+                           'z':z}
+                
                 return result
