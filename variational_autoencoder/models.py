@@ -160,7 +160,7 @@ class VAE(tf.keras.Model):
             y_pred_inference = self((x, y[:-1]), training=False, 
                                     samples=self.inference_samples_train,
                                     verbose=True)
-            self.compiled_metrics.update_state(y, y_pred_inference, 
+            self.compiled_metrics.update_state(y[-1], y_pred_inference, 
                                                sample_weight)
 
         return {m.name: m.result() for m in self.metrics}
@@ -200,7 +200,7 @@ class VAE(tf.keras.Model):
             y_pred_inference = self((x, y[:-1]), training=False, 
                                     samples=self.inference_samples_test, 
                                     verbose=True)
-            self.compiled_metrics.update_state(y, y_pred_inference, 
+            self.compiled_metrics.update_state(y[-1], y_pred_inference, 
                                                sample_weight)
         
         return {m.name: m.result() for m in self.metrics}
@@ -227,19 +227,19 @@ class VAE(tf.keras.Model):
         return self((x, y[:-1]), training=False, 
                     samples=self.inference_samples_predict)
 
-    def build(self, input_shape):
+    def build(self, input_shape):      
         # Instantiate networks if passed as subclasses
         if isinstance(self.encoder_zero, type):
-            self.encoder_zero = self.encoder(latent_dim=self.latent_dim)
+            self.encoder_zero = self.encoder_zero(latent_dim=self.latent_dim)
         if isinstance(self.prior_zero, type):
-            self.prior_zero = self.prior(latent_dim=self.latent_dim)
+            self.prior_zero = self.prior_zero(latent_dim=self.latent_dim)
         if isinstance(self.decoder_zero, type):
-            assert isinstance(input_shape, (list, tuple)), (
+            assert tf.rank(input_shape)==3, (
                 '''Cannot infer decoder output shape from x data only.
                 Please call model on (x,y) in training mode to build'''
                 )
             self.output_dim = input_shape[-1][-1][-1]
-            self.decoder = self.decoder(output_dim=self.output_dim)
+            self.decoder_zero = self.decoder_zero(output_dim=self.output_dim)
         if isinstance(self.encoder, type):
             self.encoder = self.encoder(latent_dim=self.latent_dim,
                                         encoder_zero=self.encoder_zero)
@@ -247,11 +247,11 @@ class VAE(tf.keras.Model):
             self.prior = self.prior(latent_dim=self.latent_dim,
                                     prior_zero=self.prior_zero)
         if isinstance(self.decoder, type):
-            assert isinstance(input_shape, (list, tuple)), (
+            assert tf.rank(input_shape)==3, (
                 '''Cannot infer decoder output shape from x data only.
                 Please call model on (x,y) in training mode to build'''
                 )
-            self.output_dim = input_shape[-1][-1]
+            self.output_dim = input_shape[-1][-1][-1]
             self.decoder = self.decoder(output_dim=self.output_dim,
                                         decoder_zero=self.decoder_zero)
             
@@ -403,11 +403,14 @@ class VAE(tf.keras.Model):
                 
                 # Split off x for the timestep to be predicted
                 data_x_last = self.stack(data_x[-1], samples)
-                data_x_rest = data_x[:-1]
                 
                 # Split off data for zeroth timestep
                 data_x_zero = self.stack(data_x[0], samples)
                 data_y_zero = self.stack(data_y[0], samples)
+                
+                # Keep data of other timesteps for iteration
+                data_x_rest = data_x[1:-1]
+                data_y_rest = data_y[1:]
                 
                 # Run zeroth timestep
                 _, z_zero = self.encoder_zero([data_x_zero, data_y_zero])
@@ -428,7 +431,7 @@ class VAE(tf.keras.Model):
                 
                 z_params, z = self.prior([data_x_last, z_p])
                 
-                y_params, y = self.decoder([data_x_t, z, y_p])
+                y_params, y = self.decoder([data_x_last, z, y_p])
             
             # Return results
             if verbose == False:
