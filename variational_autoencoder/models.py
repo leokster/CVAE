@@ -17,8 +17,9 @@ def _get_output_len(layer):
 
     
 class VAE(tf.keras.Model):
-    def __init__(self, encoder_zero, decoder_zero, prior_zero,
-                 encoder=None, decoder=None, prior=None, 
+    def __init__(self, encoder, decoder, prior, updater,
+                 encoder_zero, decoder_zero, prior_zero,
+                 encoder_t, decoder_t, prior_t,
                  kl_loss=None, r_loss=None, latent_dim=None, 
                  training_mode_samples=1, 
                  inference_samples_train=10,
@@ -103,14 +104,22 @@ class VAE(tf.keras.Model):
         
         self.beta = tf.Variable(kwargs.pop("beta", 1) * 1.0, trainable=False)
         super(VAE, self).__init__(**kwargs)
-        self.encoder_zero = encoder_zero
-        self.decoder_zero = decoder_zero
-        self.prior_zero = prior_zero
         self.encoder = encoder
         self.decoder = decoder
         self.prior = prior
+        self.updater = updater
+        
+        self.encoder_zero = encoder_zero
+        self.decoder_zero = decoder_zero
+        self.prior_zero = prior_zero
+        
+        self.encoder_t = encoder_t
+        self.decoder_t = decoder_t
+        self.prior_t = prior_t
+
         self.kl_loss = kl_loss
         self.r_loss = r_loss
+        
         self.latent_dim = latent_dim
         self.training_mode_samples = training_mode_samples
         self.inference_samples_train = inference_samples_train
@@ -227,33 +236,46 @@ class VAE(tf.keras.Model):
         return self((x, y[:-1]), training=False, 
                     samples=self.inference_samples_predict)
 
-    def build(self, input_shape):      
-        # Instantiate networks if passed as subclasses
-        if isinstance(self.encoder_zero, type):
-            self.encoder_zero = self.encoder_zero(latent_dim=self.latent_dim)
-        if isinstance(self.prior_zero, type):
-            self.prior_zero = self.prior_zero(latent_dim=self.latent_dim)
-        if isinstance(self.decoder_zero, type):
-            #assert tf.rank(input_shape)==3, (
-            #    '''Cannot infer decoder output shape from x data only.
-            #    Please call model on (x,y) in training mode to build'''
-            #    )
-            self.output_dim = input_shape[-1][-1][-1]
-            self.decoder_zero = self.decoder_zero(output_dim=self.output_dim)
+    def build(self, input_shape):  
+        self.output_dim = input_shape[-1][-1][-1]
+        
+        # Instantiate primary networks if passed as subclasses
         if isinstance(self.encoder, type):
-            self.encoder = self.encoder(latent_dim=self.latent_dim,
-                                        encoder_zero=self.encoder_zero)
+            self.encoder = self.encoder(latent_dim=self.latent_dim)
         if isinstance(self.prior, type):
-            self.prior = self.prior(latent_dim=self.latent_dim,
-                                    prior_zero=self.prior_zero)
+            self.prior = self.prior(latent_dim=self.latent_dim)
         if isinstance(self.decoder, type):
-            #assert tf.rank(input_shape)==3, (
-            #    '''Cannot infer decoder output shape from x data only.
-            #    Please call model on (x,y) in training mode to build'''
-            #    )
-            self.output_dim = input_shape[-1][-1][-1]
-            self.decoder = self.decoder(output_dim=self.output_dim,
-                                        decoder_zero=self.decoder_zero)
+            self.decoder = self.decoder(output_dim=self.output_dim)
+        if isinstance(self.updater, type):
+            self.updater = self.updater(latent_dim=self.latent_dim)
+        
+        # Instantiate zero networks if passed as subclasses
+        if isinstance(self.encoder_zero, type):
+            self.encoder_zero = self.encoder_zero(latent_dim=self.latent_dim,
+                                                  encoder=self.encoder,
+                                                  prior=self.prior)
+        if isinstance(self.prior_zero, type):
+            self.prior_zero = self.prior_zero(latent_dim=self.latent_dim,
+                                              prior=self.prior)
+        if isinstance(self.decoder_zero, type):
+            self.decoder_zero = self.decoder_zero(output_dim=self.output_dim,
+                                                  decoder=self.decoder,
+                                                  prior=self.prior)
+        
+        # Instantiate t networks if passed as subclasses
+        if isinstance(self.encoder_t, type):
+            self.encoder_t = self.encoder_t(latent_dim=self.latent_dim,
+                                            encoder=self.encoder,
+                                            prior=self.prior,
+                                            updater=self.updater)
+        if isinstance(self.prior_t, type):
+            self.prior_t = self.prior_t(latent_dim=self.latent_dim,
+                                        prior=self.prior,
+                                        updater=self.updater)
+        if isinstance(self.decoder_t, type):
+            self.decoder_t = self.decoder_t(output_dim=self.output_dim,
+                                            decoder=self.decoder,
+                                            prior=self.prior)
             
         # Instantiate losses if passed as subclasses
         if isinstance(self.kl_loss, type):
@@ -314,16 +336,16 @@ class VAE(tf.keras.Model):
                 data_x_t = self.stack(data_x_t, samples)
                 data_y_t = self.stack(data_y_t, samples)
                 
-                z_params_enc_t, z_t = self.encoder([data_x_t, 
-                                                    data_y_t,
-                                                    z_p])
+                z_params_enc_t, z_t = self.encoder_t([data_x_t, 
+                                                      data_y_t,
+                                                      z_p])
             
-                z_params_pri_t, _ = self.prior([data_x_t,
-                                                z_p])
+                z_params_pri_t, _ = self.prior_t([data_x_t,
+                                                  z_p])
             
-                y_params_t, y_t = self.decoder([data_x_t, 
-                                                z_t,
-                                                y_p])
+                y_params_t, y_t = self.decoder_t([data_x_t, 
+                                                  z_t,
+                                                  y_p])
                 
                 # Append results to lists
                 z_params_enc.append(z_params_enc_t)
@@ -424,14 +446,14 @@ class VAE(tf.keras.Model):
                     data_x_t = self.stack(data_x_t, samples)
                     data_y_t = self.stack(data_y_t, samples)
                 
-                    _, z_p = self.encoder([data_x_t, data_y_t, z_p])
+                    _, z_p = self.encoder_t([data_x_t, data_y_t, z_p])
                     
                 # Run last timestep
                 y_p = self.stack(data_y[-1], samples)
                 
-                z_params, z = self.prior([data_x_last, z_p])
+                z_params, z = self.prior_t([data_x_last, z_p])
                 
-                y_params, y = self.decoder([data_x_last, z, y_p])
+                y_params, y = self.decoder_t([data_x_last, z, y_p])
             
             # Return results
             if verbose == False:
