@@ -234,10 +234,10 @@ class VAE(tf.keras.Model):
         if isinstance(self.prior_zero, type):
             self.prior_zero = self.prior_zero(latent_dim=self.latent_dim)
         if isinstance(self.decoder_zero, type):
-            assert tf.rank(input_shape)==3, (
-                '''Cannot infer decoder output shape from x data only.
-                Please call model on (x,y) in training mode to build'''
-                )
+            #assert tf.rank(input_shape)==3, (
+            #    '''Cannot infer decoder output shape from x data only.
+            #    Please call model on (x,y) in training mode to build'''
+            #    )
             self.output_dim = input_shape[-1][-1][-1]
             self.decoder_zero = self.decoder_zero(output_dim=self.output_dim)
         if isinstance(self.encoder, type):
@@ -247,10 +247,10 @@ class VAE(tf.keras.Model):
             self.prior = self.prior(latent_dim=self.latent_dim,
                                     prior_zero=self.prior_zero)
         if isinstance(self.decoder, type):
-            assert tf.rank(input_shape)==3, (
-                '''Cannot infer decoder output shape from x data only.
-                Please call model on (x,y) in training mode to build'''
-                )
+            #assert tf.rank(input_shape)==3, (
+            #    '''Cannot infer decoder output shape from x data only.
+            #    Please call model on (x,y) in training mode to build'''
+            #    )
             self.output_dim = input_shape[-1][-1][-1]
             self.decoder = self.decoder(output_dim=self.output_dim,
                                         decoder_zero=self.decoder_zero)
