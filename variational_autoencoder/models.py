@@ -99,8 +99,8 @@ class VAE(tf.keras.Model):
             return tf.keras.models.Model([x_input, z_input, sample_input],
                                          [y_params, y_smpl])
         """
-        self.beta = tf.Variable(kwargs.pop("beta", 1) * 1.0, trainable=False)
         super(VAE, self).__init__(**kwargs)
+        self.beta = tf.Variable(kwargs.pop("beta", 1) * 1.0, trainable=False)
         self.encoder = encoder
         self.decoder = decoder
         self.prior = prior
