@@ -181,7 +181,7 @@ class Dense2d(tf.keras.layers.Layer):
         self.kernel_constraint = constraints.get(kernel_constraint)
         self.bias_constraint = constraints.get(bias_constraint)
 
-        self.input_spec = InputSpec(min_ndim=3)
+        #self.input_spec = InputSpec(min_ndim=3)
         self.supports_masking = True
 
     def build(self, input_shape):
@@ -201,7 +201,7 @@ class Dense2d(tf.keras.layers.Layer):
             raise ValueError('The second last dimension of the inputs to `Dense2d` '
                              'should be defined. Found `None`.')
 
-        self.input_spec = InputSpec(min_ndim=3, axes={-1: last_dim})
+        #self.input_spec = InputSpec(min_ndim=3, axes={-1: last_dim})
         self.kernel = self.add_weight(
             'kernel',
             shape=[second_last_dim, self.units, last_dim],
