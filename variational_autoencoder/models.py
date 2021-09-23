@@ -17,7 +17,7 @@ def _get_output_len(layer):
 
     
 class VAE(tf.keras.Model):
-    def __init__(self, encoder, decoder, prior, 
+    def __init__(self, encoder, decoder, prior, shared_weights=None,
                  kl_loss=None, r_loss=None, latent_dim=None, 
                  training_mode_samples=1, 
                  inference_samples_train=10,
@@ -104,6 +104,7 @@ class VAE(tf.keras.Model):
         self.encoder = encoder
         self.decoder = decoder
         self.prior = prior
+        self.shared_weights = shared_weights
         self.kl_loss = kl_loss
         self.r_loss = r_loss
         self.latent_dim = latent_dim
@@ -230,17 +231,39 @@ class VAE(tf.keras.Model):
 
     def build(self, input_shape):
         # Instantiate networks if passed as subclasses
+        if self.shared_weights is not None:
+            shared_weights = []
+            for layer in self.shared_weights:
+                if isinstance(layer, type):
+                    layer = layer(latent_dim=self.latent_dim)
+                shared_weights.append(layer)
+            self.shared_weights = shared_weights
         if isinstance(self.encoder, type):
-            self.encoder = self.encoder(latent_dim=self.latent_dim)
+            if self.shared_weights is not None:
+                self.encoder = self.encoder(latent_dim=self.latent_dim,
+                                            shared_weights=self.shared_weights)
+            else:
+                self.encoder = self.encoder(latent_dim=self.latent_dim)
         if isinstance(self.prior, type):
-            self.prior = self.prior(latent_dim=self.latent_dim)
+            if self.shared_weights is not None:
+                self.prior = self.prior(latent_dim=self.latent_dim,
+                                        shared_weights=self.shared_weights)
+            else:    
+                self.prior = self.prior(latent_dim=self.latent_dim)
         if isinstance(self.decoder, type):
             assert isinstance(input_shape, (list, tuple)), (
                 '''Cannot infer decoder output shape from x data only.
                 Please call model on (x,y) in training mode to build'''
                 )
-            self.output_dim = input_shape[-1][-1]
-            self.decoder = self.decoder(output_dim=self.output_dim)
+            if type(input_shape[-1]) == dict:
+                self.output_dim = list(input_shape[-1].values())[0][-1]
+            else:
+                self.output_dim = input_shape[-1][-1]
+            if self.shared_weights is not None:
+                self.decoder = self.decoder(output_dim=self.output_dim,
+                                            shared_weights=self.shared_weights)
+            else:
+                self.decoder = self.decoder(output_dim=self.output_dim)
             
         # Instantiate losses if passed as subclasses
         if isinstance(self.kl_loss, type):
@@ -274,7 +297,7 @@ class VAE(tf.keras.Model):
                 z_params_enc, z = self.encoder([data_x, data_y, samples])
 
                 # Run prior on x
-                z_params_pri, _ = self.prior([data_x, samples])
+                z_params_pri, _ = self.prior([data_x, samples, z])
                 
                 # run decoder on data_x and z where z is sampled from encoder
                 y_params, y = self.decoder([data_x, z, samples])
@@ -283,7 +306,7 @@ class VAE(tf.keras.Model):
                 z_params_enc, z = self.encoder([data_x, data_y])
 
                 # Run prior on x
-                z_params_pri, _ = self.prior([data_x])
+                z_params_pri, _ = self.prior([data_x, z])
                 
                 # run decoder on data_x and z where z is sampled from encoder
                 y_params, y = self.decoder([data_x, z])
@@ -307,10 +330,16 @@ class VAE(tf.keras.Model):
             
             # Add beta metric
             self.add_metric(self.beta, aggregation='mean', name='beta')
-            result = {'y_params':y_params, 
-                    'z_params':z_params, 
-                    'y':y, 
-                    'z':z}
+            result = {'z_params':z_params, 'z':z}
+            if type(y_params) == dict:
+                result.update(y_params)
+            else:
+                result['y_params'] = y_params
+                
+            if type(y) == dict:
+                result.update(y)
+            else:
+                result['y'] = y
             
             result = self.add_sampling_axis(result, samples, invert=True)
             return result
@@ -321,18 +350,25 @@ class VAE(tf.keras.Model):
                 data = self.add_sampling_axis(data, samples)
                 
             if self.pass_samples_to_model:
-                z_params, z = self.prior([data, samples])
+                z_params, z = self.prior([data, samples, None])
                 y_params, y = self.decoder([data, z, samples])
             else:
-                z_params, z = self.prior([data])
+                z_params, z = self.prior([data, None])
                 y_params, y = self.decoder([data, z])
 
             if verbose == False:
                 return self.add_sampling_axis(y, samples, invert=True)
             if verbose == True:
-                result =  {'y_params':y_params, 
-                        'z_params':z_params, 
-                        'y':y, 
-                        'z':z}
+                result = {'z_params':z_params, 'z':z}
+                if type(y_params) == dict:
+                    result.update(y_params)
+                else:
+                    result['y_params'] = y_params
+                    
+                if type(y) == dict:
+                    result.update(y)
+                else:
+                    result['y'] = y
+                    
                 result = self.add_sampling_axis(result, samples, invert=True)
                 return result
