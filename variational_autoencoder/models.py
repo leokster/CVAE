@@ -294,22 +294,25 @@ class VAE(tf.keras.Model):
 
             if self.pass_samples_to_model:
                 # Run encoder on x and y
-                z_params_enc, z = self.encoder([data_x, data_y, samples])
+                z_params_enc, z = self.encoder([data_x, data_y, samples], 
+                                               training)
 
                 # Run prior on x
-                z_params_pri, _ = self.prior([data_x, samples, z])
+                z_params_pri, _ = self.prior([data_x, samples, z], 
+                                             training)
                 
                 # run decoder on data_x and z where z is sampled from encoder
-                y_params, y = self.decoder([data_x, z, samples])
+                y_params, y = self.decoder([data_x, z, samples], 
+                                           training)
             else:
                 # Run encoder on x and y
-                z_params_enc, z = self.encoder([data_x, data_y])
+                z_params_enc, z = self.encoder([data_x, data_y], training)
 
                 # Run prior on x
-                z_params_pri, _ = self.prior([data_x, z])
+                z_params_pri, _ = self.prior([data_x, z], training)
                 
                 # run decoder on data_x and z where z is sampled from encoder
-                y_params, y = self.decoder([data_x, z])
+                y_params, y = self.decoder([data_x, z], training)
             
             # Bundle latent parameters to pass to loss function
             z_params = tf.concat([z_params_pri, z_params_enc], axis=-1)
@@ -350,11 +353,11 @@ class VAE(tf.keras.Model):
                 data = self.add_sampling_axis(data, samples)
                 
             if self.pass_samples_to_model:
-                z_params, z = self.prior([data, samples, None])
-                y_params, y = self.decoder([data, z, samples])
+                z_params, z = self.prior([data, samples, None], training)
+                y_params, y = self.decoder([data, z, samples], training)
             else:
-                z_params, z = self.prior([data, None])
-                y_params, y = self.decoder([data, z])
+                z_params, z = self.prior([data, None], training)
+                y_params, y = self.decoder([data, z], training)
 
             if verbose == False:
                 return self.add_sampling_axis(y, samples, invert=True)
