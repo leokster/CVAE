@@ -20,8 +20,8 @@ class VAE(tf.keras.Model):
     def __init__(self, encoder, decoder, prior, shared_weights=None,
                  kl_loss=None, r_loss=None, latent_dim=None, 
                  training_mode_samples=1, 
-                 inference_samples_train=10,
-                 inference_samples_test=10, 
+                 inference_samples_train=20,
+                 inference_samples_test=20, 
                  inference_samples_predict=1000,
                  do_sampling=False,
                  pass_samples_to_model=True,
@@ -362,7 +362,7 @@ class VAE(tf.keras.Model):
             if verbose == False:
                 return self.add_sampling_axis(y, samples, invert=True)
             if verbose == True:
-                result = {'z_params':z_params, 'z':z}
+                result = {'z_params':z_params, 'z_sampled':z}
                 if type(y_params) == dict:
                     result.update(y_params)
                 else:
@@ -371,7 +371,7 @@ class VAE(tf.keras.Model):
                 if type(y) == dict:
                     result.update(y)
                 else:
-                    result['y'] = y
+                    result['y_sampled'] = y
                     
                 result = self.add_sampling_axis(result, samples, invert=True)
                 return result
